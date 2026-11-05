@@ -20,7 +20,7 @@ module.exports = ({ log }) => {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 1.0, maxOutputTokens: 300, responseMimeType: 'application/json',
+          generationConfig: { temperature: 1.0, maxOutputTokens: 1024, responseMimeType: 'application/json',
             responseSchema: { type: 'OBJECT', properties: { say: { type: 'STRING' }, mood: { type: 'STRING', enum: MOODS },
               reply_to: { type: 'STRING' },
               remember: { type: 'ARRAY', items: { type: 'OBJECT', properties: { name: { type: 'STRING' }, fact: { type: 'STRING' } }, required: ['name', 'fact'] } } },
@@ -43,7 +43,14 @@ module.exports = ({ log }) => {
         return null;
       }
       fails = 0;
-      const o = JSON.parse((j.candidates?.[0]?.content?.parts || []).map(p => p.text).join(''));
+      const raw = (j.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
+      let o; try { o = JSON.parse(raw); } catch {
+        // cut-off answer: keep the "say" text if it's there
+        const m = /"say"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(raw), md = /"mood"\s*:\s*"(\w+)"/.exec(raw);
+        if (!m || m[1].length < 8) throw new Error('bad JSON from model');
+        o = { say: m[1].replace(/\\"/g, '"').replace(/[^.!?]*$/, '') || m[1], mood: md ? md[1] : 'happy' };
+        log('llm: repaired a cut-off answer');
+      }
       return o && typeof o.say === 'string' ? { say: o.say, mood: MOODS.includes(o.mood) ? o.mood : 'neutral',
         reply_to: typeof o.reply_to === 'string' ? o.reply_to : '', remember: Array.isArray(o.remember) ? o.remember.slice(0, 3) : [] } : null;
     } catch (e) {
