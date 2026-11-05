@@ -40,7 +40,8 @@ fi
 
 log "starting chrome windows"
 CH=(google-chrome --no-sandbox --test-type --no-first-run --no-default-browser-check --disable-dev-shm-usage
-    --disable-features=Translate --autoplay-policy=no-user-gesture-required --force-device-scale-factor=1
+    --disable-features=Translate,CalculateNativeWinOcclusion --autoplay-policy=no-user-gesture-required
+    --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows --force-device-scale-factor=1
     --window-position=0,0 --window-size=1280,720 --kiosk)
 DISPLAY=:99 "${CH[@]}" --user-data-dir="$RUN/chrome-game" "https://www.housebets.com/" >/dev/null 2>&1 &
 AV="file://$H/avatar/hubie-avatar-demo.html?overlay=1&keyed=1"

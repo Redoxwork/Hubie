@@ -288,8 +288,12 @@ const RIG = __RIG__;
     const el = new Audio(url); el.crossOrigin='anonymous';
     const src = ac.createMediaElementSource(el); src.connect(analyser); analyser.connect(ac.destination);
     if (text) showCaption(text, 60000);
-    speech = { el, env };
-    const done = () => { capBox.classList.remove('on'); try{ src.disconnect(); }catch(e){} if (speech && speech.el === el) speech = null; tell({type:'ended'}); };
+    speech = { el, env, frames: 0, maxLvl: 0, t0: performance.now() };
+    const done = () => { capBox.classList.remove('on'); try{ src.disconnect(); }catch(e){}
+      const sp = speech && speech.el === el ? speech : null;
+      if (sp) tell({ type: 'diag', env: env ? env.length : 0, frames: sp.frames, secs: +((performance.now() - sp.t0)/1000).toFixed(1),
+        maxMouth: +sp.maxLvl.toFixed(2), hidden: document.hidden, ctx: audioCtx ? audioCtx.state : 'none' });
+      if (sp) speech = null; tell({type:'ended'}); };
     el.onended = done; el.onerror = done;
     await el.play();
   }
@@ -320,6 +324,7 @@ const RIG = __RIG__;
     if (now < fakeTalkUntil) target = Math.max(target, syllables(now));
     level = target;
     lvlSmooth += (level - lvlSmooth) * (level > lvlSmooth ? .6 : .3);
+    if (speech){ speech.frames++; if (lvlSmooth > speech.maxLvl) speech.maxLvl = lvlSmooth; }
     meter.style.width = (lvlSmooth*100).toFixed(0)+'%';
     const talking = lvlSmooth > .08;
 
