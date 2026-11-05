@@ -266,12 +266,30 @@ const RIG = __RIG__;
     for (let i=0;i<data.length;i++){ const v=(data[i]-128)/128; s+=v*v; }
     return Math.min(1, Math.max(0, (Math.sqrt(s/data.length)-.02)*8));
   }
+  // lip sync from the clip itself: loudness every 40 ms, played back in step with the audio (works with no speakers)
+  let speech = null;
+  async function envelope(url){
+    try {
+      const ab = await ensureAudio().decodeAudioData(await (await fetch(url)).arrayBuffer());
+      const ch = ab.getChannelData(0), hop = Math.round(ab.sampleRate * 0.04), env = []; let peak = 1e-6;
+      for (let i = 0; i < ch.length; i += hop){ let s2 = 0; const e = Math.min(ch.length, i + hop);
+        for (let j = i; j < e; j++) s2 += ch[j]*ch[j]; const r = Math.sqrt(s2/(e-i)); env.push(r); if (r > peak) peak = r; }
+      return env.map(r => { const v = r/peak; return v < .12 ? 0 : Math.min(1, v*1.1); });
+    } catch(e){ return null; }
+  }
+  function speechLevel(now){
+    if (!speech || speech.el.paused || speech.el.ended) return 0;
+    if (speech.env){ const i = Math.floor(speech.el.currentTime / 0.04); return speech.env[i] || 0; }
+    return syllables(now);
+  }
   async function speakAudio(url, text){
     const ac = ensureAudio(); await ac.resume();
+    const env = await envelope(url);
     const el = new Audio(url); el.crossOrigin='anonymous';
     const src = ac.createMediaElementSource(el); src.connect(analyser); analyser.connect(ac.destination);
     if (text) showCaption(text, 60000);
-    const done = () => { capBox.classList.remove('on'); try{ src.disconnect(); }catch(e){} tell({type:'ended'}); };
+    speech = { el, env };
+    const done = () => { capBox.classList.remove('on'); try{ src.disconnect(); }catch(e){} if (speech && speech.el === el) speech = null; tell({type:'ended'}); };
     el.onended = done; el.onerror = done;
     await el.play();
   }
@@ -298,7 +316,7 @@ const RIG = __RIG__;
     if (!ready()) return;
 
     // talking level
-    let target = micLevel();
+    let target = Math.max(micLevel(), speechLevel(now));
     if (now < fakeTalkUntil) target = Math.max(target, syllables(now));
     level = target;
     lvlSmooth += (level - lvlSmooth) * (level > lvlSmooth ? .6 : .3);
