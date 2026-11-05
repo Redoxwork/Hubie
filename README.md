@@ -4,7 +4,7 @@ An AI-run Kick stream of **Hubie**, the Housebets sloth. Hubie plays Housebets g
 
 Entry for the Housebets Contest Labs "Hubie, live 24/7" contest. Channel: [kick.com/iamhubie](https://kick.com/iamhubie)
 
-> Status: server + Cloudflare check ✅ · avatar ✅ · persona ✅ · login/demo test and stream test 🧪 in progress · game bot, brain, voice, chat ⏳
+> Status: server + Cloudflare page load ✅ · avatar ✅ · persona ✅ · stream to Kick ✅ (auto-reconnect in 2 s proven) · Housebets security check: waiting on Housebets team · game bot, brain, voice, chat ⏳
 
 ## How it works
 
