@@ -3,6 +3,24 @@ import json, os, subprocess, sys, time
 
 mode, V, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 
+LAUGHS = ["hah!", "ha ha ha!", "hah hah!", "heh heh.", "hahaha!", "ah ha ha ha!", "heh.", "huh huh huh.", "ha!", "ha... ha ha!"]
+if mode == "laughs":
+    import soundfile as sf
+    from kokoro_onnx import Kokoro
+    k = Kokoro(os.path.join(V, "kokoro-v1.0.onnx"), os.path.join(V, "voices-v1.0.bin"))
+    rows = []
+    for i, l in enumerate(LAUGHS, 1):
+        for sp in (1.05, 1.25):
+            a, sr = k.create(f"{l} that slot ate my snacks.", voice="am_puck", speed=sp, lang="en-us")
+            name = f"L{i}{'f' if sp > 1.1 else ''}"
+            wav = os.path.join(OUT, name + ".wav"); sf.write(wav, a, sr)
+            subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", wav, "-b:a", "96k", os.path.join(OUT, name + ".mp3")], check=True); os.remove(wav)
+            rows.append(f'<div class=c><b>{name}</b> &nbsp;"{l}" {"(faster)" if sp > 1.1 else ""}<br><audio controls preload=none src="{name}.mp3"></audio></div>')
+    open(os.path.join(OUT, "index.html"), "w").write("""<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Hubie laughs</title><style>body{background:#0b1418;color:#e6f4f5;font:15px system-ui;margin:14px}.c{background:#12232a;border:1px solid #234;border-radius:12px;padding:10px;margin:8px 0}audio{width:100%;margin-top:6px}</style>
+<h2>Hubie laugh samples</h2><p>Each says the laugh, then "that slot ate my snacks." Tell Claude the codes you like (e.g. L2, L5f).</p>""" + "".join(rows))
+    sys.exit(0)
+
 # One line per Hubie mood (spelled out in full words so the voice reads them right)
 LINES = [
     "Yooo Dave! Welcome in man, grab a branch and chill with me.",
