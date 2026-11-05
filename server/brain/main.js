@@ -61,7 +61,8 @@ const server = http.createServer((req, res) => {
       if (!(await kick.verify(req.headers, raw))) return log('kick: webhook signature check failed (ignored)');
       let e; try { e = JSON.parse(raw); } catch { return; }
       const type = req.headers['kick-event-type'];
-      if (type === 'chat.message.sent') director.onChat({ id: e.message_id, userId: e.sender?.user_id, name: e.sender?.username, text: e.content });
+      if (type === 'chat.message.sent') director.onChat({ id: e.message_id, userId: e.sender?.user_id, name: e.sender?.username, text: e.content,
+        replyTo: e.replies_to?.sender?.username || e.reply_to?.sender?.username || e.replied_to?.sender?.username || null });
       else if (type === 'channel.followed') director.onFollow(e.follower?.username);
       else if (type === 'channel.subscription.new' || type === 'channel.subscription.renewal') director.onSub(e.subscriber?.username, 'sub');
       else if (type === 'channel.subscription.gifts') director.onSub(e.gifter?.username || 'someone', `gifted ${(e.giftees || []).length}`);
@@ -91,7 +92,7 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ ok: true, avatar: sockets.size, ai: llm.enabled, voice: tts.ok, kick: kick.me(), ...director.status() }));
   }
   if (u.pathname === '/test/chat') {   // pretend a viewer typed something
-    director.onChat({ id: 't' + Date.now(), userId: 'test', name: u.searchParams.get('name') || 'tester', text: u.searchParams.get('text') || 'hi hubie' });
+    director.onChat({ id: 't' + Date.now(), userId: 'test', name: u.searchParams.get('name') || 'tester', text: u.searchParams.get('text') || 'hi hubie', replyTo: u.searchParams.get('to') });
     res.writeHead(200); return res.end('ok');
   }
   if (u.pathname === '/info') {
