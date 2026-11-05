@@ -39,7 +39,8 @@ case "${1:-help}" in
     systemctl stop hubie-test 2>/dev/null || true
     if systemctl is-active --quiet hubie-live || pgrep -f ffmpeg >/dev/null; then
       systemctl stop hubie-live; pkill -f ffmpeg; pkill -f google-chrome; pkill -f Xvfb; pkill -f mediamtx
-      echo "Going offline for 90 s so Kick starts a fresh stream session..."; sleep 90
+      touch "$H/data/fresh-session"; chown hubie:hubie "$H/data/fresh-session"   # the server waits 90 s itself
+      echo "Restarting: offline for 90 s so Kick starts a fresh stream session (the server handles it, you can close Termius)."
     fi
     curl -fs http://127.0.0.1:8090/session/new >/dev/null 2>&1 || true
     systemctl start hubie-brain

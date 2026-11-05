@@ -21,6 +21,9 @@ GAME_URL="${HUBIE_GAME_URL:-https://www.housebets.com/casino}"
 RUN=/tmp/hubie-run; rm -rf "$RUN"; mkdir -p "$RUN" "$H/data" "$H/recordings"; chmod 700 "$RUN"
 export XDG_RUNTIME_DIR="$RUN"
 trap 'trap - EXIT TERM INT; log "live stopping, cleaning up"; kill 0 2>/dev/null' EXIT TERM INT
+if [ -f "$H/data/fresh-session" ]; then
+  rm -f "$H/data/fresh-session"; log "offline for 90 s so Kick starts a fresh stream session"; sleep 90; date +%s > "$H/data/live-since"
+fi
 [ -s "$H/data/live-since" ] || date +%s > "$H/data/live-since"
 
 # ---------- parts ----------
