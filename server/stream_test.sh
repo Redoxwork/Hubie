@@ -58,8 +58,9 @@ renderer(){
       -thread_queue_size 1024 -f x11grab -framerate 30 -video_size 1280x720 -draw_mouse 0 -i :98 \
       -thread_queue_size 1024 "${AUDIO_IN[@]}" \
       -filter_complex "[1:v]colorkey=0x00FF00:0.30:0.08[av];[0:v][av]overlay=format=auto,drawtext=fontfile=$FONT:text='%{localtime} UTC  stream test':x=12:y=12:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=6,format=yuv420p[v]" \
-      -map "[v]" -map 2:a -c:v libx264 -preset veryfast -b:v 2500k -maxrate 2500k -bufsize 5000k \
-      -g 60 -keyint_min 60 -c:a aac -b:a 128k -ar 44100 -f flv "$RELAY"
+      -map "[v]" -map 2:a -af aresample=async=1000 -fps_mode cfr -r 30 \
+      -c:v libx264 -preset veryfast -tune zerolatency -bf 0 -b:v 2500k -maxrate 2500k -bufsize 5000k \
+      -g 60 -keyint_min 60 -sc_threshold 0 -c:a aac -b:a 128k -ar 44100 -f flv "$RELAY"
     log "renderer stopped (code $?), restarting in 1s"; sleep 1
   done
 }
