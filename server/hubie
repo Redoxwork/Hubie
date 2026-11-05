@@ -37,6 +37,11 @@ case "${1:-help}" in
 
   live)   # the real thing: non-stop stream that restarts itself (and survives reboots)
     systemctl stop hubie-test 2>/dev/null || true
+    if systemctl is-active --quiet hubie-live || pgrep -f ffmpeg >/dev/null; then
+      systemctl stop hubie-live; pkill -f ffmpeg; pkill -f google-chrome; pkill -f Xvfb; pkill -f mediamtx
+      echo "Going offline for 90 s so Kick starts a fresh stream session..."; sleep 90
+    fi
+    curl -fs http://127.0.0.1:8090/session/new >/dev/null 2>&1 || true
     systemctl start hubie-brain
     date +%s > "$H/data/live-since"; chown hubie:hubie "$H/data/live-since"
     systemctl enable --now hubie-live >/dev/null 2>&1 && systemctl restart hubie-live

@@ -66,7 +66,7 @@ uptime_text
 
 FONT=/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf
 [ -f "$FONT" ] || FONT=/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf
-LABEL=",drawtext=fontfile=$FONT:textfile=$RUN/uptime.txt:reload=1:x=12:y=12:fontsize=17:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=6"
+LABEL=",drawtext=fontfile=$FONT:textfile=$RUN/uptime.txt:reload=1:x=12:y=h-th-40:fontsize=15:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=6"
 [ "${SHOW_UPTIME:-1}" = 0 ] && LABEL=""
 renderer(){
   while :; do
