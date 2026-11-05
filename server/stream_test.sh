@@ -13,7 +13,11 @@ H=/opt/hubie
 set -a; . /etc/hubie.env; set +a
 log(){ echo "[$(date -u +%H:%M:%S)] $*"; }
 if [ -z "${KICK_URL:-}" ] || [ -z "${KICK_KEY:-}" ]; then log "Kick URL/key missing. Run: hubie secrets"; exit 1; fi
-DEST="${KICK_URL%/}/${KICK_KEY}"
+BASE="${KICK_URL%/}"
+# Kick's ingest needs /app before the key (rtmps://...live-video.net/app/<key>); add it if the saved URL lacks it
+case "$BASE" in */app) ;; *) BASE="$BASE/app" ;; esac
+DEST="$BASE/${KICK_KEY}"
+hide(){ sed -u "s#${KICK_KEY}#sk_****(hidden)#g"; }   # never print the stream key
 RELAY=rtmp://127.0.0.1:1935/hubie
 
 RUN=/tmp/hubie-run; rm -rf "$RUN"; mkdir -p "$RUN"; chmod 700 "$RUN"
@@ -61,9 +65,9 @@ renderer(){
 }
 pusher(){
   while :; do
-    log "pusher: sending to Kick"
-    ffmpeg -hide_banner -loglevel error -nostdin -i "$RELAY" -c copy -f flv "$DEST"
-    log "pusher: Kick connection ended (code $?), reconnecting in 2s"; sleep 2
+    log "pusher: sending to Kick ($BASE/sk_****)"
+    ffmpeg -hide_banner -loglevel error -nostdin -i "$RELAY" -c copy -f flv "$DEST" 2>&1 | hide
+    log "pusher: Kick connection ended (code ${PIPESTATUS[0]}), reconnecting in 2s"; sleep 2
   done
 }
 renderer & sleep 4
