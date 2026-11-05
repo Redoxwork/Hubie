@@ -9,7 +9,24 @@ const GAME_URL = process.env.HUBIE_GAME_URL || 'https://www.housebets.com/casino
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}] keeper:`, ...a);
 const SAFE = /^(maybe later|close|close modal|close dialog|no thanks|not now|got it|accept|accept all|i agree|dismiss|skip|×|✕)$/i;
 const NEVER = /deposit|withdraw|buy|purchase|cashier|bet|spin|wager|real money|claim|register|sign ?up|log ?in/i;
-let lastCheckLog = 0, lastLogin = 0;
+let lastCheckLog = 0, lastLogin = 0, calmLogged = false;
+
+// Calm mode: pause the page's animations and videos so the stream stays sharp and light (off: HUBIE_CALM=0)
+async function calm(page) {
+  if (process.env.HUBIE_CALM === '0') return;
+  const done = await page.evaluate(() => {
+    if (!document.getElementById('hubie-calm')) {
+      const st = document.createElement('style'); st.id = 'hubie-calm';
+      st.textContent = '*,*::before,*::after{animation-play-state:paused!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}';
+      document.head.appendChild(st);
+    }
+    let n = 0;
+    for (const v of document.querySelectorAll('video')) { if (!v.paused) { v.pause(); n++; } v.autoplay = false; }
+    for (const a of document.getAnimations ? document.getAnimations() : []) { try { a.pause(); n++; } catch (e) {} }
+    return n;
+  }).catch(() => 0);
+  if (!calmLogged) { calmLogged = true; log('calm mode on: page animations paused', done ? `(${done})` : ''); }
+}
 
 // ---- auto-login with Hubie's own account (email + password from /etc/hubie.env) ----
 async function visibleLogin(page) {
@@ -63,6 +80,7 @@ async function tick(page) {
     return null;
   }, { safe: SAFE.source, never: NEVER.source }).catch(() => null);
   if (hit) log('closed popup:', JSON.stringify(hit));
+  await calm(page);
   const check = page.frames().some(f => /challenges\.cloudflare|turnstile/i.test(f.url()));
   if (check) {
     if (Date.now() - lastCheckLog > 10 * 60e3) { lastCheckLog = Date.now(); log('security check is showing (waiting on Housebets)'); }
