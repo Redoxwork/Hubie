@@ -37,6 +37,9 @@ case "${1:-help}" in
   shots)
     bash "$H/server/shots.sh" ;;
 
+  voices)
+    bash "$H/server/voices.sh" ;;
+
   *)
-    echo "hubie secrets | test-login | test-stream [minutes] | log | stop | shots | update" ;;
+    echo "hubie secrets | voices | test-login | test-stream [minutes] | log | stop | shots | update" ;;
 esac
