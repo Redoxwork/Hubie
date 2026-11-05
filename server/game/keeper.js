@@ -68,7 +68,7 @@ async function tick(page) {
     if (Date.now() - lastCheckLog > 10 * 60e3) { lastCheckLog = Date.now(); log('security check is showing (waiting on Housebets)'); }
     return;                                                    // never touch it, and don't try to log in behind it
   }
-  if (await visibleLogin(page)) await login(page);
+  if (process.env.AUTO_LOGIN === '1' && await visibleLogin(page)) await login(page);   // off until Housebets fixes demo/security check
 }
 
 (async () => {
