@@ -22,16 +22,17 @@ ask KICK_KEY     "Kick Stream Key"
 ask GEMINI_API_KEY     "Gemini API key (aistudio.google.com)"
 ask KICK_CLIENT_ID     "Kick app Client ID"
 ask KICK_CLIENT_SECRET "Kick app Client Secret"
+ask OPENROUTER_API_KEY "OpenRouter API key (backup brain, Enter to skip)"
 
 {
-  for k in HB_EMAIL HB_PASSWORD KICK_URL KICK_KEY GEMINI_API_KEY KICK_CLIENT_ID KICK_CLIENT_SECRET PUBLIC_HOST ENERGY GEMINI_MODEL SHOW_UPTIME HUBIE_GAME_URL AUTO_LOGIN VBITRATE HUBIE_CALM; do
+  for k in HB_EMAIL HB_PASSWORD KICK_URL KICK_KEY GEMINI_API_KEY KICK_CLIENT_ID KICK_CLIENT_SECRET OPENROUTER_API_KEY OPENROUTER_MODEL SAVE_AI PUBLIC_HOST ENERGY GEMINI_MODEL SHOW_UPTIME HUBIE_GAME_URL AUTO_LOGIN VBITRATE HUBIE_CALM; do
     if [ -n "${!k:-}" ]; then printf '%s=%q\n' "$k" "${!k}"; fi
   done
 } > "$F.tmp"
 mv "$F.tmp" "$F"; chown root:hubie "$F"; chmod 640 "$F"
 clear
 echo "Saved. Check (secrets hidden):"
-for k in HB_EMAIL HB_PASSWORD KICK_URL KICK_KEY GEMINI_API_KEY KICK_CLIENT_ID KICK_CLIENT_SECRET; do
+for k in HB_EMAIL HB_PASSWORD KICK_URL KICK_KEY GEMINI_API_KEY KICK_CLIENT_ID KICK_CLIENT_SECRET OPENROUTER_API_KEY; do
   v="${!k:-}"; if [ -z "$v" ]; then echo "  $k: MISSING"
   elif [ "$k" = HB_EMAIL ] || [ "$k" = KICK_URL ] || [ "$k" = KICK_CLIENT_ID ]; then echo "  $k: $v"
   else echo "  $k: set (${#v} characters)"; fi
