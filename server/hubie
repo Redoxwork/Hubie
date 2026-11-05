@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Short commands for running Hubie from a phone.
+set -euo pipefail
+H=/opt/hubie
+ENVF=/etc/hubie.env
+
+case "${1:-help}" in
+  secrets)
+    bash "$H/server/secrets.sh" ;;
+
+  update)
+    git -C "$H" pull --ff-only
+    (cd "$H/server" && npm install --omit=dev --no-audit --no-fund)
+    chmod +x "$H/server/hubie" "$H/server/"*.sh; chown -R hubie:hubie "$H"
+    echo "UPDATE-OK" ;;
+
+  test-login)
+    dir="$H/shots/$(date +%m%d-%H%M)"; mkdir -p "$dir"; chown hubie:hubie "$dir"
+    runuser -u hubie -- bash -c "set -a; . $ENVF; set +a; export SHOTS_DIR='$dir'; cd $H/server && \
+      xvfb-run -a -s '-screen 0 1280x720x24' node test_login.js"
+    echo; echo "Screenshots saved. To see them: hubie shots" ;;
+
+  test-stream)
+    mins="${2:-6}"
+    systemctl stop hubie-test 2>/dev/null || true
+    systemd-run --quiet --unit=hubie-test --collect -p User=hubie -p WorkingDirectory="$H/server" \
+      -p Environment=HOME=/home/hubie bash "$H/server/stream_test.sh" "$mins"
+    echo "Stream test started for $mins min. Watch kick.com/iamhubie"
+    echo "Live log: hubie log   (ctrl+c just closes the log, the test keeps running)" ;;
+
+  log)
+    journalctl -u hubie-test -f -n 40 -o cat ;;
+
+  stop)
+    systemctl stop hubie-test 2>/dev/null || true; echo "stopped" ;;
+
+  shots)
+    bash "$H/server/shots.sh" ;;
+
+  *)
+    echo "hubie secrets | test-login | test-stream [minutes] | log | stop | shots | update" ;;
+esac

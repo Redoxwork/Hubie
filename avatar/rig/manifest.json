@@ -1,0 +1,78 @@
+{
+ "w": 943,
+ "h": 939,
+ "pivot": [
+  472.0,
+  480.0
+ ],
+ "layers": {
+  "body": [
+   104,
+   406
+  ],
+  "head": [
+   225,
+   2
+  ],
+  "eyes_open": [
+   251,
+   217
+  ],
+  "eyes_closed": [
+   251,
+   217
+  ],
+  "eyes_happy": [
+   251,
+   217
+  ],
+  "eyes_laugh": [
+   251,
+   217
+  ],
+  "eyes_sad": [
+   251,
+   217
+  ],
+  "eyes_shocked": [
+   251,
+   217
+  ],
+  "mouth_smile": [
+   339,
+   306
+  ],
+  "mouth_small": [
+   339,
+   306
+  ],
+  "mouth_open": [
+   339,
+   306
+  ],
+  "mouth_grin": [
+   339,
+   306
+  ],
+  "mouth_laugh": [
+   339,
+   306
+  ],
+  "mouth_frown": [
+   339,
+   306
+  ],
+  "mouth_o": [
+   339,
+   306
+  ],
+  "think_body": [
+   138,
+   406
+  ],
+  "think_head": [
+   225,
+   1
+  ]
+ }
+}

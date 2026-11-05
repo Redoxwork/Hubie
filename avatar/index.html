@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hubie Avatar</title>
+<style>
+  :root{ --bg:#071318; --panel:#0e1d24; --line:#1d3540; --text:#e6f4f5; --muted:#8fb0b6; --teal:#5ce1e6; --gold:#f2b544; --red:#ff6b6b; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-x:hidden}
+  body.overlay{background:transparent}
+  body.overlay .demo-only{display:none!important}
+  /* keyed: stream compositing. Flat green background that ffmpeg keys out; no soft shadows (they'd turn green-tinted). */
+  body.overlay.keyed{background:#00ff00}
+  body.keyed *{box-shadow:none!important}
+  body.keyed .cam::before{display:none}
+  body.keyed .banner{background:#0b1418}
+  body.keyed .caption{background:#09161c;transition:none}
+  body.keyed .tag{background:#0b1418}
+  .scene{position:relative;width:100%;max-width:1280px;margin:0 auto;aspect-ratio:16/9;overflow:hidden;
+    background:radial-gradient(120% 90% at 30% 20%,#12313b 0%,#081a20 55%,#050d11 100%);border-bottom:1px solid var(--line)}
+  body.overlay .scene{max-width:none;height:100vh;aspect-ratio:auto;background:transparent;border:0}
+  .game{position:absolute;left:4%;top:7%;width:60%;height:72%;border:1px solid var(--line);border-radius:14px;
+    background:linear-gradient(160deg,#0f242c,#0a181e);display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:clamp(10px,2vw,16px);letter-spacing:.08em;text-transform:uppercase}
+  .banner{position:absolute;left:0;right:0;bottom:0;padding:.5em 1em;background:rgba(0,0,0,.6);z-index:3;
+    font-size:clamp(9px,1.6vw,13px);color:#cfe;display:flex;gap:1em;justify-content:center}
+  .banner b{color:var(--gold)}
+  /* Hubie wrapper: two layouts. cam = webcam box in the corner (default). full = full body, bottom right. */
+  .camwrap{position:absolute;z-index:2;pointer-events:none}
+  .cam{position:relative;container-type:inline-size}
+  .stage{position:relative;width:100%;aspect-ratio:943/1029}
+  #hubie,#fx{position:absolute;inset:0;width:100%;height:100%}
+  #hubie{will-change:filter}
+  .tag{display:none}
+  .caption{background:rgba(9,22,28,.93);border:1px solid #2b5562;border-radius:12px;padding:.5em .75em;
+    font-size:clamp(10px,1.7vw,17px);line-height:1.3;opacity:0;transition:opacity .25s;color:#f1fbfb;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  .caption.on{opacity:1}
+  .caption .who{color:var(--teal);font-weight:700;margin-right:.35em}
+
+  /* bigger text on the real stream so it reads on Kick */
+  body.overlay .caption{font-size:clamp(14px,1.5vw,30px)}
+  body.overlay .banner{font-size:clamp(12px,1.1vw,22px);padding:.45em 1em}
+
+  /* full body */
+  body.mode-full .camwrap{right:0;bottom:0;width:40%}
+  body.overlay.mode-full .camwrap{width:min(40vw,72vh)}
+  body.mode-full .caption{position:absolute;left:-40%;right:6%;top:13%;transform:translateY(-100%)}
+  body.mode-full .game{width:60%}
+
+  /* cam view */
+  body.mode-cam .camwrap{right:2%;top:4%;width:34%}
+  body.overlay.mode-cam .camwrap{width:min(30vw,48vh)}
+  body.mode-cam .cam{aspect-ratio:4/3;overflow:hidden;border-radius:16px;border:2px solid #2b6b78;
+    background:radial-gradient(90% 80% at 50% 30%,#1d4652 0%,#0f2830 55%,#08161b 100%);
+    box-shadow:0 0 0 1px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.45),0 0 24px rgba(92,225,230,.18)}
+  body.mode-cam .cam::before{content:"";position:absolute;inset:0;
+    background:radial-gradient(40% 35% at 78% 18%,rgba(242,181,68,.16),transparent 70%);pointer-events:none}
+  body.mode-cam .stage{position:absolute;width:108.8%;left:-4.4%;top:-6.2%}
+  body.mode-cam .tag{display:flex;align-items:center;gap:.4em;position:absolute;left:3.5%;bottom:5%;z-index:2;
+    background:rgba(0,0,0,.55);border-radius:8px;padding:.2em .55em;font-weight:700;font-size:clamp(7px,3.6cqw,22px);letter-spacing:.04em}
+  body.mode-cam .tag i{width:.55em;height:.55em;border-radius:50%;background:#ff4d4d;box-shadow:0 0 8px #ff4d4d}
+  body.mode-cam .caption{margin-top:.5em}
+  body.mode-cam .game{width:58%;height:80%;left:3%;top:5%}
+
+  .panel{max-width:1280px;margin:0 auto;padding:14px 16px 40px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+  button{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--text);padding:10px 14px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+  button:active{transform:translateY(1px)}
+  button.win{border-color:#6b5520;color:var(--gold)} button.loss{border-color:#5a2a2a;color:var(--red)}
+  button.on{background:#123540;border-color:var(--teal);color:var(--teal)}
+  h2{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:18px 0 4px}
+  input[type=text]{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0a171c;color:var(--text);font:inherit}
+  .note{color:var(--muted);font-size:13px}
+  .meter{height:6px;background:#0a171c;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+  .meter i{display:block;height:100%;width:0;background:var(--teal)}
+  .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="scene">
+  <div class="game demo-only">Housebets demo game goes here</div>
+  <div class="camwrap">
+    <div class="cam">
+      <div class="stage">
+        <canvas id="hubie" width="943" height="1029"></canvas>
+        <canvas id="fx" width="943" height="1029"></canvas>
+      </div>
+      <div class="tag"><i></i>hubie</div>
+    </div>
+    <div class="caption" id="caption"><span class="who">hubie</span><span id="capText"></span></div>
+  </div>
+  <div class="banner"><span><b>18+</b> only</span><span>Demo play, no real money</span><span>Please gamble responsibly</span></div>
+</div>
+
+<div class="panel demo-only">
+  <h2>Talk</h2>
+  <div class="row">
+    <button id="bHello">Say hello</button>
+    <button id="bChat">Reply to chat</button>
+    <button id="bMic">Use my mic</button>
+  </div>
+  <div class="row">
+    <input type="text" id="say" placeholder="Type something for Hubie to say">
+    <button id="bSay">Say</button>
+  </div>
+  <div class="meter"><i id="meter"></i></div>
+  <h2>React</h2>
+  <div class="row">
+    <button class="win" id="bWin">Win</button>
+    <button class="win" id="bBig">Big win</button>
+    <button class="loss" id="bLoss">Loss</button>
+    <button id="bShock">Shock</button>
+    <button id="bThink">Thinking</button>
+    <button id="bLook">Look around</button>
+  </div>
+  <h2>Layout</h2>
+  <div class="row">
+    <button id="bMode">Switch to full body</button>
+  </div>
+  <p class="note">Add <code>?overlay=1</code> to the URL for the stream version (transparent, no buttons); <code>&amp;mode=full</code> starts in full body. Voice here is your phone's built-in speech as a stand-in; the stream uses Hubie's real TTS voice.</p>
+</div>
+
+<script>
+const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers": {"body": [104, 406], "head": [225, 2], "eyes_open": [251, 217], "eyes_closed": [251, 217], "eyes_happy": [251, 217], "eyes_laugh": [251, 217], "eyes_sad": [251, 217], "eyes_shocked": [251, 217], "mouth_smile": [339, 306], "mouth_small": [339, 306], "mouth_open": [339, 306], "mouth_grin": [339, 306], "mouth_laugh": [339, 306], "mouth_frown": [339, 306], "mouth_o": [339, 306], "think_body": [138, 406], "think_head": [225, 1]}}, "src": {"body": "rig/webp/body.webp", "head": "rig/webp/head.webp", "eyes_open": "rig/webp/eyes_open.webp", "eyes_closed": "rig/webp/eyes_closed.webp", "eyes_happy": "rig/webp/eyes_happy.webp", "eyes_laugh": "rig/webp/eyes_laugh.webp", "eyes_sad": "rig/webp/eyes_sad.webp", "eyes_shocked": "rig/webp/eyes_shocked.webp", "mouth_smile": "rig/webp/mouth_smile.webp", "mouth_small": "rig/webp/mouth_small.webp", "mouth_open": "rig/webp/mouth_open.webp", "mouth_grin": "rig/webp/mouth_grin.webp", "mouth_laugh": "rig/webp/mouth_laugh.webp", "mouth_frown": "rig/webp/mouth_frown.webp", "mouth_o": "rig/webp/mouth_o.webp", "think_body": "rig/webp/think_body.webp", "think_head": "rig/webp/think_head.webp"}};
+(() => {
+  const params = new URLSearchParams(location.search);
+  if (params.get('overlay') === '1') document.body.classList.add('overlay');
+  if (params.get('keyed') === '1') document.body.classList.add('keyed');
+  function setLayout(m){ document.body.classList.toggle('mode-full', m==='full'); document.body.classList.toggle('mode-cam', m!=='full');
+    const btn = document.getElementById('bMode'); if (btn) btn.textContent = m==='full' ? 'Switch to cam view' : 'Switch to full body'; }
+  let layout = params.get('mode') === 'full' ? 'full' : 'cam';
+  setLayout(layout);
+
+  const M = RIG.manifest, W = M.w, H = M.h, PX = M.pivot[0], PY = M.pivot[1];
+  const PAD = 90; // headroom so hops never clip the hat
+  const cv = document.getElementById('hubie'), ctx = cv.getContext('2d');
+  const fx = document.getElementById('fx'), fctx = fx.getContext('2d');
+  const head = document.createElement('canvas'); head.width = W; head.height = H;
+  const hctx = head.getContext('2d');
+  const capBox = document.getElementById('caption'), capText = document.getElementById('capText');
+  const meter = document.getElementById('meter');
+
+  // ---------- Load layers ----------
+  const img = {};
+  let loaded = 0; const names = Object.keys(RIG.src);
+  for (const n of names){ const i = new Image(); i.onload = () => loaded++; i.src = RIG.src[n]; img[n] = i; }
+  const ready = () => loaded === names.length;
+  const put = (c, n) => { const p = M.layers[n]; c.drawImage(img[n], p[0], p[1]); };
+
+  // ---------- Expression tables ----------
+  // eyes per mood, and the 3 mouths used for quiet / mid / loud talking
+  const MOODS = {
+    neutral: { eyes:'open',    mouth:['smile','small','open'] },
+    happy:   { eyes:'happy',   mouth:['grin','grin','laugh'] },
+    laugh:   { eyes:'laugh',   mouth:['laugh','laugh','laugh'] },
+    sad:     { eyes:'sad',     mouth:['frown','small','open'] },
+    shocked: { eyes:'shocked', mouth:['o','o','open'] },
+    thinking:{ eyes:null,      mouth:null }
+  };
+
+  // ---------- State ----------
+  let mood = 'neutral', moodStart = 0, moodDur = 0, event = null;
+  let level = 0, lvlSmooth = 0;
+  let blinkUntil = 0, nextBlink = performance.now() + 2500;
+  let look = { x:0, r:0, tx:0, tr:0, until:0 };
+  let nextLook = performance.now() + 6000;
+  const particles = [];
+
+  function setMood(m, ms, ev){ mood = m; moodStart = performance.now(); moodDur = ms || 0; event = ev || m; }
+  function react(kind){
+    if (kind==='win')    { setMood('happy', 2600, 'win'); burst(26,false); }
+    if (kind==='bigwin') { setMood('laugh', 3800, 'bigwin'); burst(70,true); setTimeout(()=>burst(40,true),600); }
+    if (kind==='loss')   { setMood('sad', 3200, 'loss'); }
+    if (kind==='shock')  { setMood('shocked', 1600, 'shock'); }
+    if (kind==='think')  { setMood('thinking', 3000, 'think'); }
+    if (kind==='look')   { lookAround(); }
+  }
+  function lookAround(){
+    const s = Math.random() < .5 ? -1 : 1;
+    look.tx = s * (10 + Math.random()*8); look.tr = s * (3 + Math.random()*2);
+    look.until = performance.now() + 1400 + Math.random()*1200;
+  }
+
+  // ---------- Particles ----------
+  function burst(n, big){
+    for (let i=0;i<n;i++) particles.push({ x:W/2+(Math.random()-.5)*260, y:H*0.35+(Math.random()-.5)*100,
+      vx:(Math.random()-.5)*(big?15:10), vy:-Math.random()*(big?17:12)-4, r:5+Math.random()*(big?10:7),
+      life:1, spin:Math.random()*6, kind:Math.random()<.6?'coin':'spark' });
+  }
+  function drawParticles(dt){
+    fctx.setTransform(1,0,0,1,0,PAD); fctx.clearRect(0,-PAD,W,H+PAD);
+    for (let i=particles.length-1;i>=0;i--){
+      const p = particles[i]; p.vy += .5; p.x += p.vx; p.y += p.vy; p.life -= dt/1600; p.spin += .15;
+      if (p.life<=0 || p.y>H+20){ particles.splice(i,1); continue; }
+      fctx.save(); fctx.globalAlpha = Math.min(1,p.life*1.5); fctx.translate(p.x,p.y);
+      if (p.kind==='coin'){ fctx.scale(Math.abs(Math.cos(p.spin)),1); fctx.beginPath(); fctx.arc(0,0,p.r,0,7);
+        fctx.fillStyle='#f2b544'; fctx.fill(); fctx.lineWidth=2; fctx.strokeStyle='#a8741d'; fctx.stroke(); }
+      else { fctx.rotate(p.spin); fctx.fillStyle='#fff3c4'; fctx.beginPath();
+        for (let k=0;k<4;k++){ fctx.rotate(Math.PI/2); fctx.lineTo(0,-p.r*1.6); fctx.lineTo(p.r*.35,-p.r*.35); } fctx.fill(); }
+      fctx.restore();
+    }
+  }
+
+  // ---------- Voice / captions ----------
+  let fakeTalkUntil = 0;
+  let capTimer = null;
+  function showCaption(text, ms){ capText.textContent = text; capBox.classList.add('on');
+    clearTimeout(capTimer); capTimer = setTimeout(()=>capBox.classList.remove('on'), ms); }
+  // pick a calm male voice from whatever the device has (demo only; the stream uses Hubie's real TTS)
+  const MALE = ['Daniel','Arthur','Aaron','Fred','Rishi','Oliver','Gordon','Reed','Rocko','Ralph',
+                'Google UK English Male','Microsoft Ryan','Microsoft Guy','Microsoft David','Microsoft George','Male'];
+  let voiceCache = null;
+  function maleVoice(){
+    if (voiceCache) return voiceCache;
+    const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+    for (const name of MALE){ const v = vs.find(x => x.name.includes(name) && /^en/i.test(x.lang)); if (v) return (voiceCache = v); }
+    return null;
+  }
+  try { speechSynthesis.onvoiceschanged = () => { voiceCache = null; maleVoice(); }; } catch(e){}
+  function say(text){
+    if (!text) return;
+    const est = Math.max(1200, text.length*72);
+    showCaption(text, est+1500);
+    fakeTalkUntil = performance.now() + est;
+    try {
+      if ('speechSynthesis' in window){
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text); u.rate = .72; u.pitch = .55;
+        const v = maleVoice(); if (v){ u.voice = v; u.lang = v.lang; }
+        let started = false;
+        u.onstart = () => { started = true; fakeTalkUntil = performance.now() + est*1.5; };
+        u.onend = () => { if (started) fakeTalkUntil = 0; };
+        speechSynthesis.speak(u);
+      }
+    } catch(e){}
+  }
+  let audioCtx=null, analyser=null, data=null, micStream=null;
+  function ensureAudio(){
+    if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if (!analyser){ analyser = audioCtx.createAnalyser(); analyser.fftSize = 1024; data = new Uint8Array(1024); }
+    return audioCtx;
+  }
+  function micLevel(){
+    if (!analyser) return 0;
+    analyser.getByteTimeDomainData(data); let s=0;
+    for (let i=0;i<data.length;i++){ const v=(data[i]-128)/128; s+=v*v; }
+    return Math.min(1, Math.max(0, (Math.sqrt(s/data.length)-.02)*8));
+  }
+  async function speakAudio(url, text){
+    const ac = ensureAudio(); await ac.resume();
+    const el = new Audio(url); el.crossOrigin='anonymous';
+    const src = ac.createMediaElementSource(el); src.connect(analyser); analyser.connect(ac.destination);
+    if (text) showCaption(text, 60000);
+    el.onended = () => { capBox.classList.remove('on'); src.disconnect(); };
+    await el.play();
+  }
+  async function toggleMic(btn){
+    if (micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; btn.classList.remove('on'); btn.textContent='Use my mic'; return; }
+    try { const ac = ensureAudio(); await ac.resume();
+      micStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+      ac.createMediaStreamSource(micStream).connect(analyser); btn.classList.add('on'); btn.textContent='Mic on (tap to stop)';
+    } catch(e){ showCaption("I can't hear you, darling. Mic access was blocked.", 3500); }
+  }
+  // fake syllables: open/close rhythm with pauses, used when we only know "talking"
+  function syllables(now){
+    const s = now/1000;
+    const beat = Math.abs(Math.sin(s*8)) * (0.55 + 0.45*Math.sin(s*2.3+1));
+    const pause = Math.sin(s*1.7) > 0.85 ? 0.15 : 1;
+    return Math.max(0, Math.min(1, beat*pause));
+  }
+
+  // ---------- Main loop ----------
+  let last = performance.now();
+  function frame(now){
+    const dt = now-last; last = now; const t = now/1000;
+    requestAnimationFrame(frame);
+    if (!ready()) return;
+
+    // talking level
+    let target = micLevel();
+    if (now < fakeTalkUntil) target = Math.max(target, syllables(now));
+    level = target;
+    lvlSmooth += (level - lvlSmooth) * (level > lvlSmooth ? .6 : .3);
+    meter.style.width = (lvlSmooth*100).toFixed(0)+'%';
+    const talking = lvlSmooth > .08;
+
+    // mood timeout
+    const p = moodDur ? Math.min(1,(now-moodStart)/moodDur) : 0;
+    if (moodDur && p >= 1){ mood='neutral'; moodDur=0; event=null; }
+    const ease = 1-p;
+
+    // blink (not while laughing or thinking-with-own-face)
+    if (now > nextBlink){
+      blinkUntil = now + (Math.random()<.2 ? 260 : 130);
+      nextBlink = now + 2400 + Math.random()*4000;
+      if (Math.random()<.15) nextBlink = blinkUntil + 160;
+    }
+    const blinking = now < blinkUntil && mood!=='laugh';
+
+    // look around now and then when idle
+    if (now > nextLook && mood==='neutral'){ lookAround(); nextLook = now + 7000 + Math.random()*9000; }
+    if (now > look.until){ look.tx = 0; look.tr = 0; }
+    look.x += (look.tx - look.x)*.06; look.r += (look.tr - look.r)*.06;
+
+    // ---- build the head image for this frame ----
+    hctx.clearRect(0,0,W,H);
+    if (mood==='thinking'){
+      put(hctx,'think_head');
+      if (blinking) put(hctx,'eyes_closed');
+    } else {
+      const md = MOODS[mood];
+      put(hctx,'head');
+      put(hctx, 'eyes_' + (blinking ? 'closed' : md.eyes));
+      const mi = !talking ? 0 : (lvlSmooth < .45 ? 1 : 2);
+      put(hctx, 'mouth_' + md.mouth[mi]);
+    }
+
+    // ---- motion ----
+    // body: slow breathing; whole figure hops on wins
+    const breath = Math.sin(t*1.3);
+    let bodyY = 0, bodyX = 0, bodySY = 1 + breath*.006;
+    // head: idle sway + nods while talking + mood motion
+    let hx = Math.sin(t*.37)*3 + look.x, hy = breath*-2, hr = Math.sin(t*.5)*1.6 + look.r;
+    if (talking){ hy -= lvlSmooth*6; hr += Math.sin(t*3.1)*1.2*lvlSmooth; }
+    let glow = 'drop-shadow(0 0 16px rgba(92,225,230,.30))';
+    if (event==='win' || event==='bigwin'){
+      const hops = event==='bigwin'?4:2, hgt = event==='bigwin'?42:26;
+      bodyY -= Math.abs(Math.sin(p*Math.PI*hops))*hgt*ease;
+      hr += Math.sin(p*Math.PI*hops*2)*4*ease;
+      glow = `drop-shadow(0 0 ${18+22*ease}px rgba(242,181,68,${(.4+.4*ease).toFixed(2)}))`;
+    }
+    if (event==='bigwin'){ hr += Math.sin(now*.03)*2.5*ease; }  // laughing shake
+    if (event==='loss'){
+      const k = Math.min(1,p*5);
+      hy += 10*k*ease; hr -= 5*k*ease; bodySY -= .01*k*ease;
+      glow = `drop-shadow(0 0 14px rgba(255,107,107,${(.12+.25*ease).toFixed(2)}))`;
+    }
+    if (event==='shock'){
+      const k = Math.sin(Math.min(1,p*3)*Math.PI);
+      bodyY -= k*16; hy -= k*8;
+    }
+    if (event==='think'){ hr += 4*Math.min(1,p*6)*ease; hx += 4*Math.min(1,p*6)*ease; }
+    cv.style.filter = glow;
+
+    // ---- draw ----
+    ctx.setTransform(1,0,0,1,0,PAD); ctx.clearRect(0,-PAD,W,H+PAD);
+    // body (scaled from the feet so breathing looks natural)
+    ctx.save();
+    ctx.translate(W/2 + bodyX, H + bodyY); ctx.scale(1, bodySY); ctx.translate(-W/2, -H);
+    put(ctx, mood==='thinking' ? 'think_body' : 'body');
+    // head rides on the body, rotating around the neck
+    ctx.translate(PX + hx, PY + hy); ctx.rotate(hr*Math.PI/180); ctx.translate(-PX, -PY);
+    ctx.drawImage(head, 0, 0);
+    ctx.restore();
+
+    drawParticles(dt);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- Remote control from the stream engine ----------
+  // {"type":"say","text":".."} {"type":"speak","url":"..","text":".."} {"type":"react","mood":"win|bigwin|loss|shock|think|look"}
+  function connect(url){
+    let ws; try { ws = new WebSocket(url); } catch(e){ return; }
+    ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
+      if (m.type==='say') say(m.text);
+      if (m.type==='speak') speakAudio(m.url, m.text).catch(()=>{});
+      if (m.type==='react') react(m.mood);
+      if (m.type==='caption') showCaption(m.text, m.ms||4000);
+      if (m.type==='layout') { layout = m.mode; setLayout(layout); }
+    };
+    ws.onclose = () => setTimeout(()=>connect(url), 2000);
+  }
+  if (params.get('ws')) connect(params.get('ws'));
+  window.hubie = { say, speakAudio, react, showCaption };
+
+  // ---------- Demo buttons ----------
+  // Official Hubie vibe (from Housebets' own Hubie chat): sleepy, dry, low energy, long pauses, zero hype.
+  const lines = {
+    hello:["hey kingsley. good to see you back.","hey. ...pull up a branch."],
+    chat: ["ama wants faster spins. ...slow it down.","someone asked if i'm watching chat. ...i see everything."],
+    win:  ["haha, nice.","...nice. anyway. back to my snack."],
+    big:  ["haha. ...nice. ...okay that one was big."],
+    loss: ["ah. damn. ... ...","ah. damn."],
+    shock:["...wait. not today man."],
+    think:["dice again. ...it's the purest thing on the floor."]
+  };
+  const pick = a => a[Math.floor(Math.random()*a.length)];
+  const $ = id => document.getElementById(id);
+  $('bHello').onclick = () => say(pick(lines.hello));
+  $('bChat').onclick  = () => say(pick(lines.chat));
+  $('bWin').onclick   = () => { react('win'); say(pick(lines.win)); };
+  $('bBig').onclick   = () => { react('bigwin'); say(pick(lines.big)); };
+  $('bLoss').onclick  = () => { react('loss'); say(pick(lines.loss)); };
+  $('bShock').onclick = () => { react('shock'); say(pick(lines.shock)); };
+  $('bThink').onclick = () => { react('think'); setTimeout(()=>say(pick(lines.think)), 3100); };
+  $('bLook').onclick  = () => react('look');
+  $('bMode').onclick  = () => { layout = layout==='cam' ? 'full' : 'cam'; setLayout(layout); };
+  $('bSay').onclick   = () => say($('say').value.trim());
+  $('say').addEventListener('keydown', e => { if (e.key==='Enter') say($('say').value.trim()); });
+  $('bMic').onclick   = e => toggleMic(e.currentTarget);
+})();
+</script>
+</body>
+</html>

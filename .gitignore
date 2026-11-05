@@ -1,0 +1,7 @@
+server/node_modules/
+shots/
+data/
+logs/
+bin/
+*.env
+.env*

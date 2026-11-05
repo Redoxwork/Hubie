@@ -1,0 +1,9 @@
+{
+  "name": "hubie-server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Hubie, live 24/7 - game bot, stream and brain",
+  "dependencies": {
+    "playwright-core": "^1.48.0"
+  }
+}
