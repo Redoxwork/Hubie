@@ -4,10 +4,10 @@ const MOODS = ['neutral', 'happy', 'laugh', 'excited', 'sad', 'shocked', 'thinki
 
 module.exports = ({ log }) => {
   const key = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+  let model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
   let backoffUntil = 0, fails = 0;
 
-  async function ask(system, prompt) {
+  async function ask(system, prompt, retried) {
     if (!key || Date.now() < backoffUntil) return null;
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 12000);
     try {
@@ -24,6 +24,10 @@ module.exports = ({ log }) => {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
+        // model retired? Google's error names the replacement: switch to it and retry once
+        const named = r.status === 404 ? [...String(j.error?.message || '').matchAll(/models\/([\w.-]+[\w])/g)].map(m => m[1]) : [];
+        const next = named[named.length - 1];
+        if (next && next !== model && !retried) { log(`llm: model ${model} retired, switching to ${next}`); model = next; return ask(system, prompt, true); }
         fails++;
         backoffUntil = Date.now() + (r.status === 429 ? 60e3 : Math.min(60e3, 5e3 * fails));
         log('llm: error', r.status, JSON.stringify(j.error?.message || j).slice(0, 160));
@@ -37,5 +41,5 @@ module.exports = ({ log }) => {
       log('llm: fail', e.message); return null;
     } finally { clearTimeout(t); }
   }
-  return { ask, enabled: !!key, model, MOODS };
+  return { ask, enabled: !!key, get model() { return model; }, MOODS };
 };

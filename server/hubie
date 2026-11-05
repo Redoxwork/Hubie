@@ -12,6 +12,7 @@ case "${1:-help}" in
     git -C "$H" pull --ff-only
     (cd "$H/server" && npm install --omit=dev --no-audit --no-fund)
     chmod +x "$H/server/hubie" "$H/server/"*.sh; chown -R hubie:hubie "$H"
+    systemctl restart hubie-brain 2>/dev/null || true
     echo "UPDATE-OK" ;;
 
   test-login)
