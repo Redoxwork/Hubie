@@ -37,7 +37,7 @@ Why the relay: if Kick drops the connection, only the small **pusher** restarts 
 2. **Log in:** in Hetzner, server → Rescue → *Reset root password*. SSH in as `root` (e.g. Termius on a phone).
 3. **Install everything** (one line):
    ```
-   curl -fsSL https://raw.githubusercontent.com/Redoxwork/hubie/main/server/setup.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/Redoxwork/Hubie/main/server/setup.sh | bash
    ```
    Wait for `SETUP-OK`.
 4. **Add logins and keys** (saved to `/etc/hubie.env` on the server, never in this repo):

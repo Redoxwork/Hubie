@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Hubie server setup. Safe to run again (it only adds what's missing).
-#   curl -fsSL https://raw.githubusercontent.com/Redoxwork/hubie/main/server/setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Redoxwork/Hubie/main/server/setup.sh | bash
 set -euo pipefail
-REPO=https://github.com/Redoxwork/hubie
+REPO=https://github.com/Redoxwork/Hubie
 H=/opt/hubie
 export DEBIAN_FRONTEND=noninteractive
 say(){ printf '\n\033[1;32m== %s\033[0m\n' "$*"; }
