@@ -42,9 +42,12 @@ start_game(){
   # the profile is kept between restarts so the Housebets login + cookies survive
   DISPLAY=:99 nice -n 5 "${CH[@]}" --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
 }
+brain_up(){ curl -fs --max-time 3 http://127.0.0.1:8090/health >/dev/null; }
 start_avatar(){
+  for i in $(seq 1 30); do brain_up && break; sleep 2; done      # wait up to 60 s for the brain
   local av="file://$H/avatar/hubie-avatar-demo.html?overlay=1&keyed=1"
-  curl -fs http://127.0.0.1:8090/health >/dev/null && av="http://127.0.0.1:8090/avatar/hubie-avatar-demo.html?overlay=1&keyed=1&ws=ws://127.0.0.1:8090/ws"
+  if brain_up; then av="http://127.0.0.1:8090/avatar/hubie-avatar-demo.html?overlay=1&keyed=1&ws=ws://127.0.0.1:8090/ws"; AV_LINKED=1
+  else AV_LINKED=0; log "avatar: brain not up yet, starting without it (watchdog will reconnect)" >&2; fi
   DISPLAY=:98 "${CH[@]}" --user-data-dir="$RUN/chrome-avatar" --remote-debugging-port=9223 "$av" >/dev/null 2>&1 & echo $!
 }
 start_relay(){
@@ -116,6 +119,11 @@ while :; do
   if ! alive "$X98"; then log "watchdog: avatar screen died, restarting"; X98=$(start_xvfb 98); sleep 2; fi
   if ! alive "$GAME"; then log "watchdog: game window died, restarting"; GAME=$(start_game); GAME_STARTED=$(date +%s); fi
   if ! alive "$AVATAR"; then log "watchdog: avatar window died, restarting"; AVATAR=$(start_avatar); fi
+  # avatar must be connected to the brain (so Hubie talks); reconnect if not, for 1 minute
+  if brain_up && [ "$(curl -fs --max-time 3 http://127.0.0.1:8090/health | python3 -c 'import json,sys; print(json.load(sys.stdin).get("avatar",0))' 2>/dev/null)" = 0 ]; then
+    NOAV=$(( ${NOAV:-0} + 1 ))
+    if [ "$NOAV" -ge 4 ]; then log "watchdog: avatar not connected to the brain, restarting avatar"; kill "$AVATAR" 2>/dev/null; sleep 2; AVATAR=$(start_avatar); NOAV=0; fi
+  else NOAV=0; fi
   if ! alive "$RELAYP"; then log "watchdog: relay died, restarting"; RELAYP=$(start_relay); fi
   if ! alive "$REND"; then log "watchdog: renderer loop died, restarting"; renderer & REND=$!; fi
   if ! alive "$PUSH"; then log "watchdog: pusher loop died, restarting"; pusher & PUSH=$!; fi
