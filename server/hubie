@@ -57,6 +57,10 @@ case "${1:-help}" in
     n="${2:-tester}"; shift; shift || true
     curl -fs -G http://127.0.0.1:8090/test/chat --data-urlencode "name=$n" --data-urlencode "text=${*:-hi hubie}" && echo " sent" ;;
 
+  set-info)   # set the Kick stream title + category
+    t="${2:-🦥 Hubie LIVE 24/7 | the Housebets sloth | chat games, demo play only | !commands}"
+    curl -s -G http://127.0.0.1:8090/info --data-urlencode "title=$t" --data-urlencode "category=${3:-Slots & Casino}"; echo ;;
+
   game)   # hubie game guess|poll  -> start a chat game now
     curl -fs -G http://127.0.0.1:8090/test/game --data-urlencode "kind=${2:-guess}" && echo " started" ;;
 
@@ -64,5 +68,5 @@ case "${1:-help}" in
     curl -fs -G http://127.0.0.1:8090/test/follow --data-urlencode "name=${2:-tester}" && echo " sent" ;;
 
   *)
-    echo "hubie secrets | voices | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | test-login | test-stream [minutes] | log | stop | shots | update" ;;
+    echo "hubie secrets | voices | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
 esac

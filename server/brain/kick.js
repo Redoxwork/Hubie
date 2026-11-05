@@ -3,7 +3,7 @@
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 
 const ID = 'https://id.kick.com', API = 'https://api.kick.com/public/v1';
-const SCOPES = 'user:read channel:read chat:write events:subscribe moderation:ban';
+const SCOPES = 'user:read channel:read channel:write chat:write events:subscribe moderation:ban';
 const EVENTS = ['chat.message.sent', 'channel.followed', 'channel.subscription.new',
   'channel.subscription.renewal', 'channel.subscription.gifts'];
 const b64 = buf => Buffer.from(buf).toString('base64url');
@@ -102,6 +102,21 @@ module.exports = ({ DATA, log, host }) => {
   const timeout = (userId, minutes, reason) => api('POST', '/moderation/bans',
     { broadcaster_user_id: tok.user.id, user_id: userId, duration: minutes, reason });
 
+  // stream title + category (needs the channel:write permission)
+  async function setInfo(title, categoryName) {
+    const body = {};
+    if (title) body.stream_title = String(title).slice(0, 140);
+    if (categoryName) {
+      const j = await api('GET', `/categories?q=${encodeURIComponent(categoryName)}`);
+      const list = j.data || [];
+      const cat = list.find(c => String(c.name).toLowerCase() === categoryName.toLowerCase()) || list[0];
+      if (cat) body.category_id = cat.id; else log('kick: category not found:', categoryName);
+    }
+    await api('PATCH', '/channels', body);
+    log('kick: stream info set', JSON.stringify(body));
+    return body;
+  }
+
   // start-up: keep tokens fresh and subscriptions in place, all on their own
   async function upkeep() {
     if (!tok || !cid()) return;
@@ -111,5 +126,5 @@ module.exports = ({ DATA, log, host }) => {
   setInterval(() => { if (tok) access().catch(() => {}); }, 5 * 60e3);
   setInterval(upkeep, 30 * 60e3);
 
-  return { loginUrl, callback, verify, chat, timeout, me: () => tok?.user || null, ready: () => !!tok?.user?.id, redirect };
+  return { loginUrl, callback, verify, chat, timeout, setInfo, me: () => tok?.user || null, ready: () => !!tok?.user?.id, redirect };
 };
