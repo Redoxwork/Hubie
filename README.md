@@ -14,7 +14,7 @@ flowchart LR
     direction LR
     GB["Game bot<br/>Playwright + Chrome<br/>housebets.com demo"] -->|wins, losses, game events| BR
     CH["Kick chat<br/>reader + moderation"] -->|messages, game requests| BR
-    BR["Brain<br/>Gemini Flash-Lite<br/>+ persona + safety filter<br/>+ fallback lines"] -->|what to say + mood| TTS["Voice<br/>Piper/Kokoro, bright friendly voice"]
+    BR["Brain<br/>Gemini Flash-Lite<br/>+ persona + safety filter<br/>+ fallback lines"] -->|what to say + mood| TTS["Voice<br/>Kokoro am_puck"]
     BR -->|"!play requests"| GB
     TTS -->|audio + mouth timing| AV["Avatar<br/>(WebSocket)"]
     GB --> SC1["Screen :99<br/>game"]
@@ -78,7 +78,7 @@ Why the relay: if Kick drops the connection, only the small **pusher** restarts 
 | Browser automation | Google Chrome + Playwright (playwright-core), Xvfb virtual screens |
 | Avatar | Custom canvas rig from 9 frames of the official Hubie art (`avatar/`) |
 | Brain | Gemini Flash-Lite + persona prompt + rule-based safety filter |
-| Voice | Piper / Kokoro TTS (bright, friendly) |
+| Voice | Kokoro TTS (kokoro-onnx), voice `am_puck`, speed 1.05: upbeat and playful |
 | Video | ffmpeg (x11grab, colorkey, x264) → mediamtx relay → ffmpeg RTMPS to Kick |
 | Chat | Kick chat API (read, reply, moderation) |
 | Uptime | systemd services + watchdog |
