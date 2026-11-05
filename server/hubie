@@ -32,8 +32,11 @@ case "${1:-help}" in
   log)
     journalctl -u hubie-test -f -n 40 -o cat ;;
 
-  stop)
-    systemctl stop hubie-test 2>/dev/null || true; echo "stopped" ;;
+  stop)   # stop the stream (add "all" to also stop the brain)
+    systemctl stop hubie-test 2>/dev/null || true
+    [ "${2:-}" = all ] && systemctl stop hubie-brain 2>/dev/null
+    pkill -f stream_test.sh; pkill -f ffmpeg; pkill -f mediamtx; pkill -f google-chrome; pkill -f Xvfb; sleep 1
+    pgrep -f ffmpeg >/dev/null && echo "something is still running, try again" || echo "stopped (Kick can take a minute to show offline)" ;;
 
   shots)
     bash "$H/server/shots.sh" ;;
