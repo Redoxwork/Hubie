@@ -31,7 +31,7 @@ function safeOut(text) {
 }
 function forVoice(t) {
   return t.replace(/\p{Extended_Pictographic}|️/gu, '').replace(/\*/g, '')
-    .replace(/(https?:\/\/)?(www\.)?housebets\.com\S*/gi, 'housebets dot com').replace(/begambleaware\.org/gi, 'begamble aware dot org')
+    .replace(/(https?:\/\/)?(www\.)?housebets\.com(\/[\w\/-]*)?/gi, 'housebets dot com').replace(/begambleaware\.org/gi, 'begamble aware dot org')
     .replace(/\b18\+/g, '18 plus').replace(/!play\b/gi, 'play').replace(/\bu\b/gi, 'you').replace(/\bur\b/gi, 'your')
     .replace(/\bu'?re\b/gi, "you're").replace(/\bpls\b/gi, 'please').replace(/\blol\b/gi, 'haha')
     .replace(/\bgg\b/gi, 'G G').replace(/\s+/g, ' ').trim();
