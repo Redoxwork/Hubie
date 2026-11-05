@@ -14,7 +14,7 @@ const SPAM_RE = /(!noads|ai service|cheap (viewers|followers)|(viewers|followers
 const SUPPORT_RE = /(can'?t stop (gambling|betting)|addict|lost (everything|all my|my rent|my savings)|in debt|chasing (my )?loss|borrow(ed)? money to|need (to win|money) (back|bad)|kill myself|want to die|suicid)/i;
 const PUSHY = [/\bdeposit/i, /\bbet (more|bigger|max|it all|everything)/i, /\ball[- ]in\b/i, /\b(win|get) it (all )?back\b/i,
   /\bchas(e|ing)\b/i, /\bguarantee/i, /\b(due|bound) (for|to) (a )?(hit|win)/i, /\bsure (win|thing)\b/i, /\bcan'?t lose\b/i,
-  /\bbuy (the )?bonus\b/i, /\bfree money\b/i, /\bnext one'?s yours\b/i];
+  /\b(u|you|y'?all|everyone|go) (should |must |gotta )?buy (a |the )?bonus/i, /\bbuy (it |the bonus )?again\b/i, /\bfree money\b/i, /\bnext one'?s yours\b/i];
 const NEGATION = /\b(don'?t|never|no|not|stop|nobody|isn'?t|aren'?t|without)\b[^.!?]{0,25}$/i;
 
 function safeOut(text) {
