@@ -66,6 +66,7 @@ Why the relay: if Kick drops the connection, only the small **pusher** restarts 
 | `hubie kick-login` | Link for connecting Hubie to Kick chat (one time) |
 | `hubie status` / `hubie brain-log` | Brain health / live brain log |
 | `hubie chat <name> <msg>` / `hubie follow <name>` | Pretend a viewer chatted / followed (testing) |
+| `hubie game guess` / `hubie game poll` | Start a chat game now (they also start by themselves every 12-18 min when chat is active) |
 | `hubie update` | Pull the latest code |
 
 ## Safety

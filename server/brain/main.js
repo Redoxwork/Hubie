@@ -94,6 +94,7 @@ const server = http.createServer((req, res) => {
     director.onChat({ id: 't' + Date.now(), userId: 'test', name: u.searchParams.get('name') || 'tester', text: u.searchParams.get('text') || 'hi hubie' });
     res.writeHead(200); return res.end('ok');
   }
+  if (u.pathname === '/test/game') { director.startGame(u.searchParams.get('kind')); res.writeHead(200); return res.end('ok'); }
   if (u.pathname === '/test/follow') { director.onFollow(u.searchParams.get('name') || 'tester'); res.writeHead(200); return res.end('ok'); }
   res.writeHead(404); res.end();
 });

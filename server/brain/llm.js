@@ -17,8 +17,10 @@ module.exports = ({ log }) => {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 1.0, maxOutputTokens: 200, responseMimeType: 'application/json',
-            responseSchema: { type: 'OBJECT', properties: { say: { type: 'STRING' }, mood: { type: 'STRING', enum: MOODS } },
+          generationConfig: { temperature: 1.0, maxOutputTokens: 300, responseMimeType: 'application/json',
+            responseSchema: { type: 'OBJECT', properties: { say: { type: 'STRING' }, mood: { type: 'STRING', enum: MOODS },
+              reply_to: { type: 'STRING' },
+              remember: { type: 'ARRAY', items: { type: 'OBJECT', properties: { name: { type: 'STRING' }, fact: { type: 'STRING' } }, required: ['name', 'fact'] } } },
               required: ['say', 'mood'] } },
         }),
       });
@@ -35,7 +37,8 @@ module.exports = ({ log }) => {
       }
       fails = 0;
       const o = JSON.parse((j.candidates?.[0]?.content?.parts || []).map(p => p.text).join(''));
-      return o && typeof o.say === 'string' ? { say: o.say, mood: MOODS.includes(o.mood) ? o.mood : 'neutral' } : null;
+      return o && typeof o.say === 'string' ? { say: o.say, mood: MOODS.includes(o.mood) ? o.mood : 'neutral',
+        reply_to: typeof o.reply_to === 'string' ? o.reply_to : '', remember: Array.isArray(o.remember) ? o.remember.slice(0, 3) : [] } : null;
     } catch (e) {
       fails++; backoffUntil = Date.now() + Math.min(60e3, 5e3 * fails);
       log('llm: fail', e.message); return null;
