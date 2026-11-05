@@ -12,7 +12,7 @@ module.exports = ({ H, DATA, log }) => {
 
   function start() {
     proc = spawn(py, [path.join(__dirname, 'tts_worker.py'), dir, out], { stdio: ['pipe', 'pipe', 'inherit'],
-      env: { ...process.env, OMP_NUM_THREADS: process.env.TTS_THREADS || '2', TTS_THREADS: process.env.TTS_THREADS || '2' } });
+      env: { ...process.env, OMP_NUM_THREADS: process.env.TTS_THREADS || '3', TTS_THREADS: process.env.TTS_THREADS || '3' } });
     proc.stdout.on('data', d => {
       buf += d; let i;
       while ((i = buf.indexOf('\n')) >= 0) {
@@ -36,13 +36,14 @@ module.exports = ({ H, DATA, log }) => {
   setInterval(() => {
     for (const f of fs.readdirSync(out)) {
       const p = path.join(out, f);
+      if (f.startsWith('keep')) continue;   // filler clips stay
       try { if (Date.now() - fs.statSync(p).mtimeMs > 10 * 60e3) fs.unlinkSync(p); } catch {}
     }
   }, 5 * 60e3);
 
-  function speak(text) {
+  function speak(text, keep) {
     if (!ok || !proc) return Promise.resolve(null);
-    const id = ++n;
+    const id = keep ? `keep${++n}` : ++n;
     proc.stdin.write(JSON.stringify({ id, text, voice: process.env.HUBIE_VOICE || 'am_puck',
       speed: Number(process.env.HUBIE_SPEED) || 1.05 }) + '\n');
     return Promise.race([

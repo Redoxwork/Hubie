@@ -12,7 +12,7 @@ module.exports = ({ log }) => {
   async function ask(system, prompt, retried, useModel) {
     if (!key || Date.now() < backoffUntil) return null;
     const m0 = useModel || model;
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000);
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m0}:generateContent`, {
         method: 'POST', signal: ctl.signal,
