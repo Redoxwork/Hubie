@@ -23,6 +23,7 @@ google-chrome --version
 
 say "3/7 hubie user + code"
 id hubie >/dev/null 2>&1 || useradd -m -s /bin/bash hubie
+git config --global --add safe.directory "$H" 2>/dev/null || true
 if [ -d "$H/.git" ]; then git -C "$H" pull --ff-only; else rm -rf "$H"; git clone --depth 1 "$REPO" "$H"; fi
 mkdir -p "$H/data" "$H/shots" "$H/logs" "$H/bin"
 
