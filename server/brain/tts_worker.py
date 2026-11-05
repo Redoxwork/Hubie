@@ -5,7 +5,19 @@ import soundfile as sf
 from kokoro_onnx import Kokoro
 
 V, OUT = sys.argv[1], sys.argv[2]
-k = Kokoro(os.path.join(V, "kokoro-v1.0.onnx"), os.path.join(V, "voices-v1.0.bin"))
+THREADS = int(os.environ.get("TTS_THREADS", "2"))
+try:
+    os.nice(10)                     # the video encoder always goes first
+except Exception:
+    pass
+MODEL, VOICES = os.path.join(V, "kokoro-v1.0.onnx"), os.path.join(V, "voices-v1.0.bin")
+try:                                # cap CPU use: by default onnxruntime grabs every core
+    import onnxruntime as ort
+    so = ort.SessionOptions(); so.intra_op_num_threads = THREADS; so.inter_op_num_threads = 1
+    k = Kokoro.from_session(ort.InferenceSession(MODEL, so, providers=["CPUExecutionProvider"]), VOICES)
+except Exception as e:
+    print(json.dumps({"note": f"thread cap not applied: {e}"}), flush=True)
+    k = Kokoro(MODEL, VOICES)
 print(json.dumps({"ready": True}), flush=True)
 
 for line in sys.stdin:

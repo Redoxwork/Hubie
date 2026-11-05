@@ -11,13 +11,15 @@ module.exports = ({ H, DATA, log }) => {
   const waiting = new Map();
 
   function start() {
-    proc = spawn(py, [path.join(__dirname, 'tts_worker.py'), dir, out], { stdio: ['pipe', 'pipe', 'inherit'] });
+    proc = spawn(py, [path.join(__dirname, 'tts_worker.py'), dir, out], { stdio: ['pipe', 'pipe', 'inherit'],
+      env: { ...process.env, OMP_NUM_THREADS: process.env.TTS_THREADS || '2', TTS_THREADS: process.env.TTS_THREADS || '2' } });
     proc.stdout.on('data', d => {
       buf += d; let i;
       while ((i = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, i); buf = buf.slice(i + 1);
         let m; try { m = JSON.parse(line); } catch { continue; }
         if (m.ready) { log('tts: Kokoro ready'); continue; }
+        if (m.note) { log('tts:', m.note); continue; }
         const w = waiting.get(m.id); if (!w) continue; waiting.delete(m.id);
         m.error ? w.reject(new Error(m.error)) : w.resolve(m);
       }

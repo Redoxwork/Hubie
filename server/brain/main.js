@@ -101,6 +101,7 @@ const server = http.createServer((req, res) => {
       .catch(e => { res.writeHead(500); res.end(e.message); });
     return;
   }
+  if (u.pathname === '/session/new') { director.newSession(); res.writeHead(200); return res.end('ok'); }
   if (u.pathname === '/test/game') { director.startGame(u.searchParams.get('kind')); res.writeHead(200); return res.end('ok'); }
   if (u.pathname === '/test/follow') { director.onFollow(u.searchParams.get('name') || 'tester'); res.writeHead(200); return res.end('ok'); }
   res.writeHead(404); res.end();

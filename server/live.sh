@@ -40,7 +40,7 @@ CH=(google-chrome --no-sandbox --test-type --no-first-run --no-default-browser-c
     --force-device-scale-factor=1 --window-position=0,0 --window-size=1280,720 --kiosk --remote-allow-origins=*)
 start_game(){
   # the profile is kept between restarts so the Housebets login + cookies survive
-  DISPLAY=:99 "${CH[@]}" --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
+  DISPLAY=:99 nice -n 5 "${CH[@]}" --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
 }
 start_avatar(){
   local av="file://$H/avatar/hubie-avatar-demo.html?overlay=1&keyed=1"
