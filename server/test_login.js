@@ -24,7 +24,7 @@ async function shot(page, name) {
 }
 
 // Only these labels are ever clicked to close things. Anything money-related is never clicked.
-const SAFE_CLOSE = /^(maybe later|close|no thanks|not now|got it|accept|accept all|i agree|dismiss|skip|×|✕|x)$/i;
+const SAFE_CLOSE = /^(maybe later|close|close modal|close dialog|no thanks|not now|got it|accept|accept all|i agree|dismiss|skip|×|✕)$/i;
 const NEVER = /deposit|withdraw|buy|purchase|cashier|bet|spin|wager|real money|claim/i;
 
 async function closePopups(page) {
@@ -33,7 +33,9 @@ async function closePopups(page) {
       const SAFE = new RegExp(safe, 'i'), NEV = new RegExp(never, 'i');
       const vis = e => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e);
         return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
-      for (const e of document.querySelectorAll('button,[role=button],a')) {
+      // buttons only: links (like the X/Twitter social link) navigate away
+      for (const e of document.querySelectorAll('button,[role=button]')) {
+        if (e.closest('footer')) continue;
         const label = ((e.innerText || '').trim() || e.getAttribute('aria-label') || e.getAttribute('title') || '').trim();
         if (!label || label.length > 30 || NEV.test(label) || !SAFE.test(label) || !vis(e)) continue;
         e.click(); return label;
@@ -69,10 +71,20 @@ async function dump(page, label) {
 const loginButton = page => page.getByRole('button', { name: /^(log ?in|sign ?in)$/i })
   .or(page.getByRole('link', { name: /^(log ?in|sign ?in)$/i })).first();
 
+// The header "Log In" button: matched by its visible text, first one that is actually on screen.
+async function findLogin(page) {
+  const all = page.locator('button, a, [role=button]').filter({ hasText: /^\s*(log ?in|sign ?in)\s*$/i });
+  const c = await all.count().catch(() => 0);
+  for (let i = 0; i < c; i++) if (await all.nth(i).isVisible().catch(() => false)) return all.nth(i);
+  return null;
+}
+
 async function login(page) {
-  if (!(await loginButton(page).isVisible().catch(() => false))) { note('LOGIN: already logged in (saved session)'); return true; }
+  let btn = await findLogin(page);
+  if (!btn) { note('LOGIN: no Log In button visible, so treating as already logged in (saved session)'); return true; }
+  note('LOGIN: logged out, Log In button found');
   if (!process.env.HB_EMAIL || !process.env.HB_PASSWORD) { note('LOGIN: skipped, no email/password saved (run: hubie secrets)'); return false; }
-  await loginButton(page).click().catch(e => note('login click failed', e.message));
+  await btn.click().catch(e => note('login click failed', e.message));
   await page.waitForTimeout(2500);
   await shot(page, 'login-form'); await dump(page, 'login-form');
   const email = page.locator('input[type=email], input[name*=email i], input[name*=user i], input[autocomplete=username], input[placeholder*=mail i], input[placeholder*=user i]').first();
@@ -88,7 +100,7 @@ async function login(page) {
   if (caps.length) note('LOGIN: ⚠️ captcha on page:', caps.join(' , '));
   const body = await page.locator('body').innerText().catch(() => '');
   if (/verification code|check your (e-?mail|inbox)|two.?factor|2fa|authenticator|one.?time/i.test(body)) note('LOGIN: ⚠️ asks for a code (email/2FA)');
-  const ok = !(await loginButton(page).isVisible().catch(() => false));
+  const ok = !(await findLogin(page));
   note(ok ? 'LOGIN: ✅ logged in' : 'LOGIN: ❌ still logged out');
   return ok;
 }
