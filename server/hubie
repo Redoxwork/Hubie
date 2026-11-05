@@ -12,7 +12,10 @@ case "${1:-help}" in
     git -C "$H" fetch -q origin main && git -C "$H" reset -q --hard origin/main
     (cd "$H/server" && npm install --omit=dev --no-audit --no-fund)
     chmod +x "$H/server/hubie" "$H/server/"*.sh; chown -R hubie:hubie "$H"
+    cp "$H/server/hubie-brain.service" "$H/server/hubie-live.service" /etc/systemd/system/ && systemctl daemon-reload
+    mkdir -p "$H/recordings" "$H/data"; chown -R hubie:hubie "$H"
     systemctl restart hubie-brain 2>/dev/null || true
+    systemctl is-active --quiet hubie-live && echo "(live is running: restart it with 'hubie live' to use the new code)"
     echo "UPDATE-OK" ;;
 
   test-login)
@@ -30,12 +33,21 @@ case "${1:-help}" in
     echo "Live log: hubie log   (ctrl+c just closes the log, the test keeps running)" ;;
 
   log)
-    journalctl -u hubie-test -f -n 40 -o cat ;;
+    journalctl -u hubie-test -u hubie-live -f -n 40 -o cat ;;
+
+  live)   # the real thing: non-stop stream that restarts itself (and survives reboots)
+    systemctl stop hubie-test 2>/dev/null || true
+    systemctl start hubie-brain
+    date +%s > "$H/data/live-since"; chown hubie:hubie "$H/data/live-since"
+    systemctl enable --now hubie-live >/dev/null 2>&1 && systemctl restart hubie-live
+    echo "Hubie is LIVE and will keep going by himself (even after a reboot)."
+    echo "Watch: hubie log   ·   Stop: hubie stop" ;;
 
   stop)   # stop the stream (add "all" to also stop the brain)
+    systemctl disable --now hubie-live >/dev/null 2>&1 || true
     systemctl stop hubie-test 2>/dev/null || true
     [ "${2:-}" = all ] && systemctl stop hubie-brain 2>/dev/null
-    pkill -f stream_test.sh; pkill -f ffmpeg; pkill -f mediamtx; pkill -f google-chrome; pkill -f Xvfb; sleep 1
+    pkill -f stream_test.sh; pkill -f live.sh; pkill -f ffmpeg; pkill -f mediamtx; pkill -f google-chrome; pkill -f Xvfb; pkill -f keeper.js; sleep 1
     pgrep -f ffmpeg >/dev/null && echo "something is still running, try again" || echo "stopped (Kick can take a minute to show offline)" ;;
 
   shots)
@@ -71,5 +83,5 @@ case "${1:-help}" in
     curl -fs -G http://127.0.0.1:8090/test/follow --data-urlencode "name=${2:-tester}" && echo " sent" ;;
 
   *)
-    echo "hubie secrets | voices | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
+    echo "hubie live | stop [all] | secrets | voices | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
 esac

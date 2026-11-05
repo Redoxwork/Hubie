@@ -57,6 +57,8 @@ Why the relay: if Kick drops the connection, only the small **pusher** restarts 
 
 | Command | What it does |
 |---|---|
+| `hubie live` | **The real thing:** non-stop stream with watchdog, survives crashes and reboots |
+| `hubie stop` / `hubie stop all` | Stop the stream / stream + brain |
 | `hubie secrets` | Save or update Housebets login + Kick key |
 | `hubie test-login` | Login + demo recon with screenshots |
 | `hubie shots` | Serve the latest screenshots on port 8080 for 10 min |

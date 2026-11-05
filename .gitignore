@@ -5,3 +5,4 @@ logs/
 bin/
 *.env
 .env*
+recordings/

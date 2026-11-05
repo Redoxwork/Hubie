@@ -1,0 +1,15 @@
+[Unit]
+Description=Hubie LIVE (non-stop stream to Kick)
+After=network-online.target hubie-brain.service
+Wants=network-online.target hubie-brain.service
+
+[Service]
+User=hubie
+WorkingDirectory=/opt/hubie/server
+Environment=HOME=/home/hubie
+ExecStart=/bin/bash /opt/hubie/server/live.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

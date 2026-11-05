@@ -54,7 +54,7 @@ apt-get install -y -q caddy
 printf '%s {\n\thandle /kick/* {\n\t\treverse_proxy 127.0.0.1:8090\n\t}\n\thandle {\n\t\trespond "hubie" 200\n\t}\n}\n' "$HOST" > /etc/caddy/Caddyfile
 ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null
 systemctl enable caddy >/dev/null 2>&1; systemctl restart caddy
-cp "$H/server/hubie-brain.service" /etc/systemd/system/hubie-brain.service
+cp "$H/server/hubie-brain.service" "$H/server/hubie-live.service" /etc/systemd/system/; mkdir -p "$H/recordings"; chown -R hubie:hubie "$H"
 systemctl daemon-reload; systemctl enable hubie-brain >/dev/null 2>&1; systemctl restart hubie-brain
 sleep 2; systemctl is-active hubie-brain >/dev/null && echo "brain running · Kick webhook: https://$HOST/kick/webhook"
 
