@@ -1,6 +1,6 @@
 # Hubie, live 24/7
 
-An AI-run Kick stream of **Hubie**, the Housebets sloth. Hubie plays Housebets games in **demo mode only**, talks with chat in his own sleepy, dry voice, and keeps himself on air with no human touching anything.
+An AI-run Kick stream of **Hubie**, the Housebets sloth. Hubie plays Housebets games in **demo mode only**, hypes up and banters with chat like a real streamer, and keeps himself on air with no human touching anything.
 
 Entry for the Housebets Contest Labs "Hubie, live 24/7" contest. Channel: [kick.com/iamhubie](https://kick.com/iamhubie)
 
@@ -14,7 +14,7 @@ flowchart LR
     direction LR
     GB["Game bot<br/>Playwright + Chrome<br/>housebets.com demo"] -->|wins, losses, game events| BR
     CH["Kick chat<br/>reader + moderation"] -->|messages, game requests| BR
-    BR["Brain<br/>Gemini Flash-Lite<br/>+ persona + safety filter<br/>+ fallback lines"] -->|what to say + mood| TTS["Voice<br/>Piper/Kokoro, slowed"]
+    BR["Brain<br/>Gemini Flash-Lite<br/>+ persona + safety filter<br/>+ fallback lines"] -->|what to say + mood| TTS["Voice<br/>Piper/Kokoro, bright friendly voice"]
     BR -->|"!play requests"| GB
     TTS -->|audio + mouth timing| AV["Avatar<br/>(WebSocket)"]
     GB --> SC1["Screen :99<br/>game"]
@@ -78,7 +78,7 @@ Why the relay: if Kick drops the connection, only the small **pusher** restarts 
 | Browser automation | Google Chrome + Playwright (playwright-core), Xvfb virtual screens |
 | Avatar | Custom canvas rig from 9 frames of the official Hubie art (`avatar/`) |
 | Brain | Gemini Flash-Lite + persona prompt + rule-based safety filter |
-| Voice | Piper / Kokoro TTS, slowed with sox |
+| Voice | Piper / Kokoro TTS (bright, friendly) |
 | Video | ffmpeg (x11grab, colorkey, x264) → mediamtx relay → ffmpeg RTMPS to Kick |
 | Chat | Kick chat API (read, reply, moderation) |
 | Uptime | systemd services + watchdog |
