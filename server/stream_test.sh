@@ -43,7 +43,11 @@ CH=(google-chrome --no-sandbox --test-type --no-first-run --no-default-browser-c
     --disable-features=Translate --autoplay-policy=no-user-gesture-required --force-device-scale-factor=1
     --window-position=0,0 --window-size=1280,720 --kiosk)
 DISPLAY=:99 "${CH[@]}" --user-data-dir="$RUN/chrome-game" "https://www.housebets.com/" >/dev/null 2>&1 &
-DISPLAY=:98 "${CH[@]}" --user-data-dir="$RUN/chrome-avatar" "file://$H/avatar/hubie-avatar-demo.html?overlay=1&keyed=1" >/dev/null 2>&1 &
+AV="file://$H/avatar/hubie-avatar-demo.html?overlay=1&keyed=1"
+if curl -fs http://127.0.0.1:8090/health >/dev/null; then
+  AV="http://127.0.0.1:8090/avatar/hubie-avatar-demo.html?overlay=1&keyed=1&ws=ws://127.0.0.1:8090/ws"; log "avatar: connected to Hubie's brain"
+else log "avatar: brain not running (avatar only, no talking)"; fi
+DISPLAY=:98 "${CH[@]}" --user-data-dir="$RUN/chrome-avatar" "$AV" >/dev/null 2>&1 &
 sleep 8
 
 log "starting local relay"

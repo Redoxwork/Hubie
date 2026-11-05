@@ -253,7 +253,8 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
     const el = new Audio(url); el.crossOrigin='anonymous';
     const src = ac.createMediaElementSource(el); src.connect(analyser); analyser.connect(ac.destination);
     if (text) showCaption(text, 60000);
-    el.onended = () => { capBox.classList.remove('on'); src.disconnect(); };
+    const done = () => { capBox.classList.remove('on'); try{ src.disconnect(); }catch(e){} tell({type:'ended'}); };
+    el.onended = done; el.onerror = done;
     await el.play();
   }
   async function toggleMic(btn){
@@ -361,16 +362,19 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
 
   // ---------- Remote control from the stream engine ----------
   // {"type":"say","text":".."} {"type":"speak","url":"..","text":".."} {"type":"react","mood":"win|bigwin|loss|shock|think|look"}
+  let sock = null;
+  function tell(m){ try { if (sock && sock.readyState === 1) sock.send(JSON.stringify(m)); } catch(e){} }
   function connect(url){
     let ws; try { ws = new WebSocket(url); } catch(e){ return; }
+    ws.onopen = () => { sock = ws; tell({type:'hello'}); };
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
       if (m.type==='say') say(m.text);
-      if (m.type==='speak') speakAudio(m.url, m.text).catch(()=>{});
+      if (m.type==='speak') speakAudio(m.url, m.text).catch(()=>tell({type:'ended'}));
       if (m.type==='react') react(m.mood);
       if (m.type==='caption') showCaption(m.text, m.ms||4000);
       if (m.type==='layout') { layout = m.mode; setLayout(layout); }
     };
-    ws.onclose = () => setTimeout(()=>connect(url), 2000);
+    ws.onclose = () => { if (sock === ws) sock = null; setTimeout(()=>connect(url), 2000); };
   }
   if (params.get('ws')) connect(params.get('ws'));
   window.hubie = { say, speakAudio, react, showCaption };

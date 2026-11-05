@@ -62,6 +62,10 @@ Why the relay: if Kick drops the connection, only the small **pusher** restarts 
 | `hubie shots` | Serve the latest screenshots on port 8080 for 10 min |
 | `hubie test-stream [min]` | Stream test to Kick with a forced reconnect |
 | `hubie log` / `hubie stop` | Follow / stop the stream test |
+| `hubie voices` | Install Kokoro voice + make samples |
+| `hubie kick-login` | Link for connecting Hubie to Kick chat (one time) |
+| `hubie status` / `hubie brain-log` | Brain health / live brain log |
+| `hubie chat <name> <msg>` / `hubie follow <name>` | Pretend a viewer chatted / followed (testing) |
 | `hubie update` | Pull the latest code |
 
 ## Safety

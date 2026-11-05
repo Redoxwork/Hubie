@@ -1,0 +1,14 @@
+[Unit]
+Description=Hubie brain (chat, AI, voice)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hubie
+WorkingDirectory=/opt/hubie/server
+ExecStart=/bin/bash -c 'set -a; . /etc/hubie.env; set +a; export HUBIE_DIR=/opt/hubie; exec /usr/bin/node /opt/hubie/server/brain/main.js'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

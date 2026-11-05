@@ -42,10 +42,21 @@ say "6/7 secrets file + firewall"
 touch /etc/hubie.env; chown root:hubie /etc/hubie.env; chmod 640 /etc/hubie.env
 ufw allow OpenSSH >/dev/null; ufw allow 8080/tcp >/dev/null; ufw --force enable >/dev/null; ufw status | head -5
 
-say "7/7 hubie command"
+say "7/8 hubie command"
 chmod +x "$H/server/hubie" "$H/server/"*.sh
 ln -sf "$H/server/hubie" /usr/local/bin/hubie
 chown -R hubie:hubie "$H"
+
+say "8/8 brain service + https for Kick (caddy)"
+IP=$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+HOST="${IP//./-}.sslip.io"
+apt-get install -y -q caddy
+printf '%s {\n\thandle /kick/* {\n\t\treverse_proxy 127.0.0.1:8090\n\t}\n\thandle {\n\t\trespond "hubie" 200\n\t}\n}\n' "$HOST" > /etc/caddy/Caddyfile
+ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null
+systemctl enable caddy >/dev/null 2>&1; systemctl restart caddy
+cp "$H/server/hubie-brain.service" /etc/systemd/system/hubie-brain.service
+systemctl daemon-reload; systemctl enable hubie-brain >/dev/null 2>&1; systemctl restart hubie-brain
+sleep 2; systemctl is-active hubie-brain >/dev/null && echo "brain running · Kick webhook: https://$HOST/kick/webhook"
 
 say "SETUP-OK"
 echo "Next: hubie secrets"

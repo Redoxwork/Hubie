@@ -19,17 +19,21 @@ ask HB_EMAIL     "Housebets login email (Hubie's account)"
 ask HB_PASSWORD  "Housebets password"
 ask KICK_URL     "Kick Stream URL (starts with rtmps://)"
 ask KICK_KEY     "Kick Stream Key"
+ask GEMINI_API_KEY     "Gemini API key (aistudio.google.com)"
+ask KICK_CLIENT_ID     "Kick app Client ID"
+ask KICK_CLIENT_SECRET "Kick app Client Secret"
 
 {
-  for k in HB_EMAIL HB_PASSWORD KICK_URL KICK_KEY GEMINI_API_KEY; do
+  for k in HB_EMAIL HB_PASSWORD KICK_URL KICK_KEY GEMINI_API_KEY KICK_CLIENT_ID KICK_CLIENT_SECRET PUBLIC_HOST ENERGY GEMINI_MODEL; do
     if [ -n "${!k:-}" ]; then printf '%s=%q\n' "$k" "${!k}"; fi
   done
 } > "$F.tmp"
 mv "$F.tmp" "$F"; chown root:hubie "$F"; chmod 640 "$F"
 clear
 echo "Saved. Check (secrets hidden):"
-for k in HB_EMAIL HB_PASSWORD KICK_URL KICK_KEY; do
+for k in HB_EMAIL HB_PASSWORD KICK_URL KICK_KEY GEMINI_API_KEY KICK_CLIENT_ID KICK_CLIENT_SECRET; do
   v="${!k:-}"; if [ -z "$v" ]; then echo "  $k: MISSING"
-  elif [ "$k" = HB_EMAIL ] || [ "$k" = KICK_URL ]; then echo "  $k: $v"
+  elif [ "$k" = HB_EMAIL ] || [ "$k" = KICK_URL ] || [ "$k" = KICK_CLIENT_ID ]; then echo "  $k: $v"
   else echo "  $k: set (${#v} characters)"; fi
 done
+systemctl restart hubie-brain 2>/dev/null && echo "Hubie brain restarted with the new keys."

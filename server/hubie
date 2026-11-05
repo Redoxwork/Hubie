@@ -38,8 +38,27 @@ case "${1:-help}" in
     bash "$H/server/shots.sh" ;;
 
   voices)
-    bash "$H/server/voices.sh" ;;
+    bash "$H/server/voices.sh"; systemctl restart hubie-brain 2>/dev/null || true ;;
+
+  kick-login)
+    host=$(head -1 /etc/caddy/Caddyfile 2>/dev/null | tr -d ' {')
+    if ! curl -fs http://127.0.0.1:8090/health >/dev/null || [ -z "$host" ]; then echo "Brain not running. Re-run the setup line."; exit 1; fi
+    echo "Open this in Chrome on your phone (logged in to Kick as Iamhubie):"
+    echo "  https://$host/kick/login?k=$(cat $H/data/login-token)" ;;
+
+  brain-log)
+    journalctl -u hubie-brain -f -n 40 -o cat ;;
+
+  status)
+    curl -fs http://127.0.0.1:8090/health | python3 -m json.tool || echo "brain not running" ;;
+
+  chat)   # hubie chat <name> <message...>  -> pretend a viewer typed it
+    n="${2:-tester}"; shift; shift || true
+    curl -fs -G http://127.0.0.1:8090/test/chat --data-urlencode "name=$n" --data-urlencode "text=${*:-hi hubie}" && echo " sent" ;;
+
+  follow)
+    curl -fs -G http://127.0.0.1:8090/test/follow --data-urlencode "name=${2:-tester}" && echo " sent" ;;
 
   *)
-    echo "hubie secrets | voices | test-login | test-stream [minutes] | log | stop | shots | update" ;;
+    echo "hubie secrets | voices | kick-login | status | brain-log | chat <name> <msg> | follow <name> | test-login | test-stream [minutes] | log | stop | shots | update" ;;
 esac
