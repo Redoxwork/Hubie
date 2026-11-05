@@ -76,7 +76,7 @@ renderer(){
       -thread_queue_size 1024 "${AUDIO_IN[@]}" \
       -filter_complex "[1:v]colorkey=0x00FF00:0.30:0.08[av];[0:v][av]overlay=format=auto${LABEL},format=yuv420p[v]" \
       -map "[v]" -map 2:a -af aresample=async=1000 -fps_mode cfr -r 30 \
-      -c:v libx264 -preset veryfast -tune zerolatency -bf 0 -b:v 2500k -maxrate 2500k -bufsize 5000k \
+      -c:v libx264 -preset veryfast -tune zerolatency -bf 0 -b:v ${VBITRATE:-4500}k -maxrate ${VBITRATE:-4500}k -bufsize $(( ${VBITRATE:-4500} * 2 ))k \
       -g 60 -keyint_min 60 -sc_threshold 0 -c:a aac -b:a 128k -ar 44100 -f flv "$RELAY"
     log "renderer stopped (code $?), restarting"; sleep 2
   done
