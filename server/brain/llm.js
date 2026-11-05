@@ -41,5 +41,5 @@ module.exports = ({ log }) => {
       log('llm: fail', e.message); return null;
     } finally { clearTimeout(t); }
   }
-  return { ask, enabled: !!key, get model() { return model; }, MOODS };
+  return { ask, enabled: !!key, healthy: () => !!key && fails === 0, get model() { return model; }, MOODS };
 };
