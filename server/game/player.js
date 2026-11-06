@@ -216,7 +216,7 @@ module.exports = function startPlayer(page, shared) {
   let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
   const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const slots = require('./slots')({ page, shared, base: BASE, tell });
-  let nextSlotBreak = Date.now() + rand(30, 50) * 60e3;
+  let nextSlotBreak = Date.now() + rand(50, 70) * 60e3;
   const level = {}, bestLevel = {};
   let riskNow = null;
   // settings: chat's !risk wins, otherwise Hubie picks (mostly medium)
@@ -331,7 +331,7 @@ module.exports = function startPlayer(page, shared) {
         }
         if (want) { await open(want, q.by); continue; }
         if (process.env.SLOTS === '1' && Date.now() > nextSlotBreak) {  // now and then, a slot break from Hubie's list
-          nextSlotBreak = Date.now() + rand(35, 60) * 60e3;
+          nextSlotBreak = Date.now() + rand(80, 110) * 60e3;
           await slots.play(slots.favourite()); await open('dice'); continue;
         }
         if (Date.now() > until) { await getChal(); await open(current === 'dice' || Math.random() < 0.35 ? nextGame() : 'dice'); continue; }

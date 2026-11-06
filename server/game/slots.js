@@ -170,9 +170,9 @@ module.exports = function slots({ page, shared, base, tell }) {
     if (prov.id === 'unknown') { const { PROVIDERS } = require('./providers'); prov = PROVIDERS.find(p => p.match.test(cardText)) || prov; }
     log('provider:', prov.name, prov.bonus ? '(bonus mapped)' : '(no bonus map)');
     tell('game', { game: name, by: by || '', slot: 1, provider: prov.name });
-    const mins = Number(process.env.SLOT_MINUTES) || 15;    // a slot session: 15 min of autoplay by default
+    const mins = Number(process.env.SLOT_MINUTES) || 35;    // a slot session: 35 min of autoplay by default
     const end = Date.now() + mins * 60e3; let quiet = 0, spins = 0, bonusUntil = 0, wins = 0, best = 0;
-    const SIZES = String(process.env.SLOT_SPINS || '50,100,100,200').split(',').map(Number).filter(x => x > 0);
+    const SIZES = String(process.env.SLOT_SPINS || '200,300,300,500').split(',').map(Number).filter(x => x > 0);
     while (Date.now() < end && !shared.blocked) {
       const batch = pick(SIZES);
       tell('auto', { game: name, n: batch });
