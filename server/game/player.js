@@ -472,7 +472,7 @@ module.exports = function startPlayer(page, shared) {
   }
   // Autobet run: 100 to 1000 bets (env AUTO_ROUNDS), bet box must stay 0 the whole time.
   // Stops early when chat asks for a game, after AUTO_MAX_MIN minutes, or if anything looks wrong.
-  const ROUNDS = String(process.env.AUTO_ROUNDS || '100,100,250,250,500,1000').split(',').map(Number).filter(x => x > 0);
+  const ROUNDS = String(process.env.AUTO_ROUNDS || '100,200,250,250,300,500').split(',').map(Number).filter(x => x > 0);
   const MAX_MS = Number(process.env.AUTO_MAX_MIN || 25) * 60e3;
   async function autoBatch(g) {
     const n = pick(ROUNDS);
