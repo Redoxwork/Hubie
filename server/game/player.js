@@ -467,7 +467,10 @@ function onFeed(j) {
         if (!user && typeof v === 'string' && /^(user_?name|username|display_?name|player_?name|nickname)$/i.test(k)) user = v;
         if (v && typeof v === 'object') walk(v, d + 1);
       } })(it, 0);
-    if (!game && typeof it.game === 'string') game = it.game;
+    if (typeof it.game_name === 'string') game = it.game_name; else if (!game && typeof it.game === 'string') game = it.game;
+    if (typeof it.player_username === 'string') user = it.player_username;
+    if (typeof it.multiplier === 'number') mult = it.multiplier; else if (typeof it.multiplier === 'string') mult = parseFloat(it.multiplier) || mult;
+    if (it.is_win === false) mult = 0;
     const key = id || `${user}|${game}|${mult}`;
     if (feedSeen.has(key)) continue; feedSeen.add(key); if (feedSeen.size > 3000) feedSeen.clear();
     if (mult >= 100 && Date.now() - lastFeed > 8 * 60e3 && feedTell) {
