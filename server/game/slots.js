@@ -103,6 +103,9 @@ async function ensureFun(page) {
   }).catch(() => null);
   let s = await funSelected();
   if (s === true) return true;
+  const fr = slotFrame(page);
+  const inner = fr ? await fr.evaluate(() => (document.body && document.body.innerText || '').slice(0, 3000)).catch(() => '') : '';
+  if (/demo balance|demo bet|fun mode|play for fun/i.test(inner) && s !== false) return true;
   // open the game settings: the gear is an icon-only button in the toolbar under the slot (📊 ⚙️ ☆ Housebets ⛶)
   if (s === null && !(await funVisible(page))) await openGear(page);
   const fun = page.locator('button, [role=tab], [role=radio], label').filter({ hasText: /^\s*fun\s*$/i }).first();
@@ -160,7 +163,10 @@ module.exports = function slots({ page, shared, base, tell }) {
       for (let i = 0; i < batch && Date.now() < end; i++) {
         if (busyCpu()) { log('CPU busy: leaving the slot'); tell('slotheavy', { game: name }); return true; }
         const fr = slotFrame(page); if (!fr) { log('slot frame gone'); return true; }
-        if (Date.now() < bonusUntil) { await sleep(3000); continue; }   // bonus round plays by itself: don't press, don't count as quiet
+        if (Date.now() < bonusUntil) {                                   // bonus plays by itself: SPACE only to get past 'click to continue'
+          await sleep(6000); const f2 = slotFrame(page); const e2 = f2 && await f2.frameElement().catch(() => null);
+          if (e2) await e2.focus().catch(() => {}); await page.keyboard.press('Space').catch(() => {}); quiet = 0; continue;
+        }
         const t0 = Date.now();
         const el = await fr.frameElement().catch(() => null);            // focus the slot frame, then SPACE (no clicks on the picture)
         if (el) await el.focus().catch(() => {});
@@ -172,7 +178,7 @@ module.exports = function slots({ page, shared, base, tell }) {
         const w = lastWin && lastWin.at >= t0 ? lastWin.win : null;
         tell('round', { game: name, win: w === null ? '' : (w > 0 ? 1 : 0), mult: '', slot: 1 });
         if (!(await ensureFun(page))) { log('FUN mode lost: leaving now'); return true; }   // re-check every spin
-        if ((await ask('/bonus/take')).go && await buyBonus(prov, name)) { bonusUntil = Date.now() + 60e3; quiet = 0; }   // chat voted for a bonus buy
+        if ((await ask('/bonus/take')).go && await buyBonus(prov, name)) { bonusUntil = Date.now() + 90e3; quiet = 0; }   // chat voted for a bonus buy
       }
       if ((await ask('/queue/size')).n > 0) { log('queue waiting: wrapping up', name); break; }   // finish this batch, then the queue
       await sleep(rand(2000, 4000));
@@ -180,8 +186,38 @@ module.exports = function slots({ page, shared, base, tell }) {
     log(`done with ${name} (${spins} spins)`);
     return true;
   }
-  // bonus buy: FUN mode confirmed before and after, only on providers with a mapped button
+  // bonus buy by the words on the buttons (works in any layout): BUY BONUS -> cheapest BUY -> OK
+  async function buyByText(fr) {
+    const opener = fr.getByText(/^\s*(buy bonus|bonus buy|buy feature|feature buy|buy free spins)\s*$/i).first();
+    if (!(await opener.isVisible().catch(() => false))) return false;
+    await opener.click({ timeout: 3000 }).catch(() => {}); await sleep(1800);
+    const n = await fr.evaluate(() => {                                   // the BUY with the lowest price next to it
+      document.querySelectorAll('[data-hubie-buy]').forEach(e => e.removeAttribute('data-hubie-buy'));
+      const buys = [...document.querySelectorAll('button,div,span,a')].filter(e => e.offsetParent && /^\s*buy\s*$/i.test(e.textContent || '') && ![...e.children].some(c => /^\s*buy\s*$/i.test(c.textContent || '')));
+      let best = null, bestPrice = Infinity;
+      for (const b of buys) {
+        let p = b, price = Infinity;
+        for (let i = 0; i < 5 && p; i++, p = p.parentElement) { const m = /[€$£]\s?([\d,]+(?:\.\d+)?)|([\d,]+(?:\.\d+)?)\s?[€$£]/.exec(p.textContent || ''); if (m) { price = parseFloat((m[1] || m[2]).replace(/,/g, '')); break; } }
+        if (price < bestPrice) { bestPrice = price; best = b; }
+      }
+      if (!best && buys.length) best = buys[0];
+      if (best) best.setAttribute('data-hubie-buy', '1');
+      return buys.length;
+    }).catch(() => 0);
+    if (!n) { await page.keyboard.press('Escape').catch(() => {}); return false; }
+    await fr.locator('[data-hubie-buy="1"]').first().click({ timeout: 3000 }).catch(() => {}); await sleep(1800);
+    const ok = fr.getByText(/^\s*(ok|confirm|yes|start)\s*$/i).first();
+    if (!(await ok.isVisible().catch(() => false))) return false;
+    if (!(await ensureFun(page))) { const back = fr.getByText(/^\s*(back|cancel|no)\s*$/i).first(); await back.click({ timeout: 3000 }).catch(() => {}); return false; }   // last check before OK
+    await ok.click({ timeout: 3000 }).catch(() => {}); await sleep(2000);
+    return true;
+  }
+
+  // bonus buy: FUN mode confirmed before and after
   async function buyBonus(prov, name) {
+    if (!(await ensureFun(page))) { tell('bonusfail', { game: name }); return false; }
+    const frT = slotFrame(page);
+    if (frT && await buyByText(frT)) { log('bonus bought on', name, '(FUN mode, by text)'); tell('bonus', { game: name }); return true; }
     if (!prov.bonus) { tell('bonusnomap', { game: name, provider: prov.name }); return false; }
     if (!(await ensureFun(page))) { tell('bonusfail', { game: name }); return false; }
     const fr = slotFrame(page); const el = fr && await fr.frameElement().catch(() => null);

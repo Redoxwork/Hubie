@@ -1,4 +1,5 @@
-// Slot providers: detected from the slot frame's address. Each profile can say where the buy-bonus button is.
+// Slot providers: detected from the slot frame's address or the game card. Bonus buys are found by button TEXT first
+// (BUY BONUS -> cheapest BUY -> OK); the positions below are only a backup for slots whose buttons have no text.
 // Positions are fractions of the slot frame (0..1). A provider with bonus: null is never clicked for a bonus.
 // To map one: screenshot the slot in FUN mode, note where "Buy feature" and its "Confirm/Buy" button sit.
 'use strict';
