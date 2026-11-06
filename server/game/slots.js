@@ -14,8 +14,28 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const NEVER = /deposit|withdraw|cashier|wallet|buy|purchase|real money|^real$/i;
 const FAVOURITES = (process.env.SLOT_LIST || 'Sweet Bonanza|Gates of Olympus|Sugar Rush|Big Bass Bonanza|Le Cowboy').split('|');
 
+// ---- "!play pragmatic": pick a random slot from that provider with the casino filter ----
+const PROV_NAMES = /^(pragmatic( play)?|hacksaw( gaming)?|nolimit( city)?|relax( gaming)?|push( gaming)?|play'?n ?go|netent|big time gaming|btg|evolution|red tiger|backseat|avatarux|elk)$/i;
+async function openByProvider(page, base, prov) {
+  await page.goto(`${base}/casino`, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  await sleep(3000);
+  await page.locator('button, [role=button], [role=tab], a').filter({ hasText: /^\s*(slots|providers?)\s*$/i }).first().click({ timeout: 3000 }).catch(() => {});
+  await sleep(1500);
+  const word = prov.split(/\s+/)[0];
+  const f = page.locator('button, [role=button], [role=option], label, a').filter({ hasText: new RegExp('^\\s*' + word, 'i') }).first();
+  if (!(await f.isVisible().catch(() => false))) { log('no provider filter for', prov); return null; }
+  await f.click({ timeout: 3000 }).catch(() => {}); await sleep(3000);
+  const hrefs = await page.evaluate(() => [...document.querySelectorAll('a[href]')].filter(a => a.offsetParent && /\/(casino|games?)\/[^/]+\/?[^/]*/.test(a.getAttribute('href') || '') && !/housegames-|provider|category/.test(a.href)).map(a => a.href)).catch(() => []);
+  if (!hrefs.length) { log('provider filter showed no games for', prov); return null; }
+  const href = pick(hrefs.slice(0, 30));
+  await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  await sleep(6000);
+  return href;
+}
+
 // ---- open a slot by name through the site search ----
 async function openSlot(page, base, name) {
+  if (PROV_NAMES.test(name.trim())) return openByProvider(page, base, name.trim());
   await page.goto(`${base}/casino`, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
   await sleep(3000);
   let box = page.locator('input[type=search], input[placeholder*="earch" i]').first();

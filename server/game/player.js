@@ -17,22 +17,22 @@ const GAMES = {
   limbo:    { name: 'Limbo',    slugs: ['limbo'], auto: true, button: /^bet$/i, weight: 3 },
   coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], button: /^(bet|flip)$/i, weight: 2,
               prep: page => clickText(page, Math.random() < 0.5 ? /^heads$/i : /^tails$/i) },
-  plinko:   { name: 'Plinko',   slugs: ['plinko'], auto: true, button: /^(bet|drop)$/i, weight: 2 },
-  wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, button: /^(bet|spin)$/i, weight: 2 },
-  keno:     { name: 'Keno',     slugs: ['keno'], auto: true, button: /^bet$/i, weight: 1,
+  plinko:   { name: 'Plinko',   slugs: ['plinko'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|drop)$/i, weight: 2 },
+  wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|spin)$/i, weight: 2 },
+  keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 1,
               prep: page => clickText(page, /^(auto ?pick|random( pick)?)$/i) },
   maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
   crash:    { name: 'Crash',    slugs: ['crash'], button: /^bet$/i, weight: 2,
               prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out|cashout/i, pick(['1.5', '2', '3'])) },
   // games with steps inside a round: start, take a few steps, cash out
   road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'road'], button: /^(bet|play|start)$/i, weight: 3,
-              steps: { step: /^go$/i, min: 1, max: 3, cash: /^cash ?out/i } },
-  tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2,
-              steps: { step: /^random ?pick$/i, min: 1, max: 3, cash: /^cash ?out/i } },
-  mines:    { name: 'Mines',    slugs: ['mines'], button: /^(bet|play)$/i, weight: 2,
-              steps: { step: /^(random ?pick|pick random( tile)?)$/i, min: 1, max: 3, cash: /^cash ?out/i } },
+              steps: { step: /^go$/i, min: 1, max: 3, cap: 8, cash: /^cash ?out/i } },
+  tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2, risk: ['easy', 'medium', 'hard'],
+              steps: { step: /^random ?pick$/i, min: 1, max: 3, cap: 7, cash: /^cash ?out/i } },
+  mines:    { name: 'Mines',    slugs: ['mines'], button: /^(bet|play)$/i, weight: 2, mines: [1, 2, 3, 5],
+              steps: { step: /^(random ?pick|pick random( tile)?)$/i, min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
-              steps: { step: 'safer', min: 1, max: 3, cash: /^cash ?out/i } },
+              steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
   blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^(bet|deal)$/i, weight: 1,
               steps: { step: /^stand$/i, min: 1, max: 1, cash: null } },
   baccarat: { name: 'Baccarat', slugs: ['baccarat'], button: /^(bet|deal)$/i, weight: 1,
@@ -108,9 +108,9 @@ async function setByLabel(page, labelRe, value) {
 const readBet = page => page.locator('[data-hubie-bet="1"]').first().inputValue().catch(() => null);
 
 // games with steps inside a round (Road, Tower, Mines, Hilo, Blackjack)
-async function runSteps(page, st) {
+async function runSteps(page, st, n) {
   await sleep(1500);
-  const n = Math.floor(rand(st.min, st.max + 1));
+  let done = 0;
   for (let i = 0; i < n; i++) {
     let b = null;
     if (st.step === 'safer') {                                    // Hilo: the side with the lower multiplier is more likely
@@ -124,9 +124,13 @@ async function runSteps(page, st) {
     } else b = await playButton(page, st.step);
     if (!b || !(await b.isVisible().catch(() => false))) break;    // round already over (busted or finished)
     await b.click({ timeout: 3000 }).catch(() => {});
+    done++;
     await sleep(rand(1200, 2200));
   }
-  if (st.cash) { const c = await playButton(page, st.cash); if (c) await c.click({ timeout: 3000 }).catch(() => {}); }
+  if (!st.cash) return { done, survived: null };
+  const c = await playButton(page, st.cash);                      // cash out still there = he survived every step
+  if (c) { await c.click({ timeout: 3000 }).catch(() => {}); return { done, survived: done >= n }; }
+  return { done, survived: false };
 }
 
 // ---- round results: read from the game's own network replies (logged once so we can tune) ----
@@ -163,6 +167,24 @@ module.exports = function startPlayer(page, shared) {
   const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const slots = require('./slots')({ page, shared, base: BASE, tell });
   let nextSlotBreak = Date.now() + rand(90, 150) * 60e3;
+  const level = {}, bestLevel = {};
+  let riskNow = null;
+  // settings: chat's !risk wins, otherwise Hubie picks (mostly medium)
+  async function applySettings(key) {
+    const g = GAMES[key];
+    const pref = await fetch(`${BRAIN}/prefs`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => ({}));
+    if (g.risk) {
+      let r = pref.risk && g.risk.includes(pref.risk) ? pref.risk : null;
+      if (!r) r = pick(g.risk.flatMap(x => Array(x === 'medium' || x === 'classic' ? 3 : 1).fill(x)));
+      await clickText(page, new RegExp('^' + r + '$', 'i'));
+      riskNow = r; tell('setting', { game: g.name, risk: r, by: pref.by || '' });
+    }
+    if (g.mines) {
+      const n = pref.risk === 'high' ? 5 : pref.risk === 'low' ? 1 : pick(g.mines);
+      const got = await setByLabel(page, /mines/i, n);
+      if (got !== null) tell('setting', { game: g.name, risk: `${n} mines`, by: pref.by || '' });
+    }
+  }
   let chal = { game: 'limbo', target: 10 }, chalAt = 0;
   const getChal = async () => { if (Date.now() - chalAt > 15e3) { chalAt = Date.now(); const c = await fetch(`${BRAIN}/challenge`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null); if (c && GAMES[c.game]) chal = c; } return chal; };
   // set the Multiplier box: the challenge target on the challenge game, a modest one otherwise
@@ -192,6 +214,7 @@ module.exports = function startPlayer(page, shared) {
     }
     await clickText(page, /^manual$/i);
     tell('game', { game: GAMES[key].name, by: by || '' });
+    await applySettings(key);
   }
   // Autobet batch: 10-25 bets, bet box must stay 0 the whole time, stops early if anything looks wrong
   async function autoBatch(g) {
@@ -255,7 +278,13 @@ module.exports = function startPlayer(page, shared) {
         const b = await playButton(page, g.button);
         if (!b) { if (++fails >= 5) { log('no play button on', g.name); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
-        if (g.steps) await runSteps(page, g.steps);
+        if (g.steps) {                                                  // steps go up after a win, down after a bust
+          const st = g.steps; level[current] = level[current] || st.min;
+          const r = await runSteps(page, st, level[current]);
+          if (r.survived === true) level[current] = Math.min(st.cap || st.max, level[current] + 1);
+          else if (r.survived === false) level[current] = Math.max(st.min, level[current] - 1);
+          if (r.survived && r.done > (bestLevel[current] || 0)) { bestLevel[current] = r.done; if (r.done >= 3) tell('steps', { game: g.name, steps: r.done }); }
+        }
         fails = 0; rounds++;
         await sleep(2500);
         const res = lastJson && lastJson.at >= t0 ? lastJson : null;
