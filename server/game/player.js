@@ -13,18 +13,35 @@ const NEVER = /deposit|withdraw|cashier|wallet|buy|purchase|real money|autobet|a
 
 // ---- game list (url slugs follow the dice page: /games/housegames-dice; fix here if one differs) ----
 const GAMES = {
-  dice:     { name: 'Dice',     slug: 'dice', auto: true,     button: /^(roll|bet)$/i, weight: 4 },
-  limbo:    { name: 'Limbo',    slug: 'limbo', auto: true,    button: /^bet$/i, weight: 2,
-              prep: page => setNumber(page, /target|multiplier/i, pick(['2', '3', '5', '10'])) },
-  coinflip: { name: 'Coinflip', slug: 'coinflip', button: /^(bet|flip)$/i, weight: 2,
+  dice:     { name: 'Dice',     slugs: ['dice'], auto: true, button: /^(roll|bet)$/i, weight: 4 },
+  limbo:    { name: 'Limbo',    slugs: ['limbo'], auto: true, button: /^bet$/i, weight: 3 },
+  coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], button: /^(bet|flip)$/i, weight: 2,
               prep: page => clickText(page, Math.random() < 0.5 ? /^heads$/i : /^tails$/i) },
-  plinko:   { name: 'Plinko',   slug: 'plinko', auto: true,   button: /^(bet|drop)$/i, weight: 2 },
-  wheel:    { name: 'Wheel',    slug: 'wheel', auto: true,    button: /^(bet|spin)$/i, weight: 1 },
-  keno:     { name: 'Keno',     slug: 'keno', auto: true,     button: /^bet$/i, weight: 1,
-              prep: page => clickText(page, /^(auto ?pick|random)$/i) },
-  maxwin:   { name: 'Max Win',  slug: 'maxwin', auto: true,   button: /^(bet|spin)$/i, weight: 1 },
+  plinko:   { name: 'Plinko',   slugs: ['plinko'], auto: true, button: /^(bet|drop)$/i, weight: 2 },
+  wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, button: /^(bet|spin)$/i, weight: 2 },
+  keno:     { name: 'Keno',     slugs: ['keno'], auto: true, button: /^bet$/i, weight: 1,
+              prep: page => clickText(page, /^(auto ?pick|random( pick)?)$/i) },
+  maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
+  crash:    { name: 'Crash',    slugs: ['crash'], button: /^bet$/i, weight: 2,
+              prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out|cashout/i, pick(['1.5', '2', '3'])) },
+  // games with steps inside a round: start, take a few steps, cash out
+  road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'road'], button: /^(bet|play|start)$/i, weight: 3,
+              steps: { step: /^go$/i, min: 1, max: 3, cash: /^cash ?out/i } },
+  tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2,
+              steps: { step: /^random ?pick$/i, min: 1, max: 3, cash: /^cash ?out/i } },
+  mines:    { name: 'Mines',    slugs: ['mines'], button: /^(bet|play)$/i, weight: 2,
+              steps: { step: /^(random ?pick|pick random( tile)?)$/i, min: 1, max: 3, cash: /^cash ?out/i } },
+  hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
+              steps: { step: 'safer', min: 1, max: 3, cash: /^cash ?out/i } },
+  blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^(bet|deal)$/i, weight: 1,
+              steps: { step: /^stand$/i, min: 1, max: 1, cash: null } },
+  baccarat: { name: 'Baccarat', slugs: ['baccarat'], button: /^(bet|deal)$/i, weight: 1,
+              prep: page => clickText(page, Math.random() < 0.6 ? /^banker\b/i : /^player\b/i) },
+  roulette: { name: 'Roulette', slugs: ['roulette'], button: /^(bet|spin)$/i, weight: 1,
+              prep: page => clickText(page, pick([/^even$/i, /^odd$/i, /^1.18$/i, /^19.36$/i])) },
 };
-const ALIASES = { coin: 'coinflip', 'coin flip': 'coinflip', 'max win': 'maxwin', max: 'maxwin', plink: 'plinko' };
+const ALIASES = { coin: 'coinflip', 'coin flip': 'coinflip', 'max win': 'maxwin', max: 'maxwin', plink: 'plinko', 'hubies road': 'road', 'hubie road': 'road', hubiesroad: 'road',
+  'dragon tower': 'tower', dragontower: 'tower', dragon: 'tower', mine: 'mines', 'hi lo': 'hilo', 'black jack': 'blackjack', bj: 'blackjack' };
 function resolve(n) {
   const k = String(n || '').toLowerCase().replace(/[^a-z ]/g, '').trim(), ns = k.replace(/ /g, '');
   return GAMES[k] ? k : ALIASES[k] ? ALIASES[k] : GAMES[ns] ? ns : null;
@@ -90,6 +107,28 @@ async function setByLabel(page, labelRe, value) {
 }
 const readBet = page => page.locator('[data-hubie-bet="1"]').first().inputValue().catch(() => null);
 
+// games with steps inside a round (Road, Tower, Mines, Hilo, Blackjack)
+async function runSteps(page, st) {
+  await sleep(1500);
+  const n = Math.floor(rand(st.min, st.max + 1));
+  for (let i = 0; i < n; i++) {
+    let b = null;
+    if (st.step === 'safer') {                                    // Hilo: the side with the lower multiplier is more likely
+      const idx = await page.evaluate(() => {
+        const bs = [...document.querySelectorAll('button')].filter(b => b.offsetParent && /higher|lower/i.test(b.innerText));
+        const m = bs.map(b => parseFloat((/([\d.]+)\s*x/i.exec(b.innerText) || [])[1] || '99'));
+        if (!bs.length) return -1;
+        const i = m.indexOf(Math.min(...m)); bs.forEach(x => x.removeAttribute('data-hubie-pick')); bs[i].setAttribute('data-hubie-pick', '1'); return i;
+      }).catch(() => -1);
+      if (idx >= 0) b = page.locator('[data-hubie-pick="1"]').first();
+    } else b = await playButton(page, st.step);
+    if (!b || !(await b.isVisible().catch(() => false))) break;    // round already over (busted or finished)
+    await b.click({ timeout: 3000 }).catch(() => {});
+    await sleep(rand(1200, 2200));
+  }
+  if (st.cash) { const c = await playButton(page, st.cash); if (c) await c.click({ timeout: 3000 }).catch(() => {}); }
+}
+
 // ---- round results: read from the game's own network replies (logged once so we can tune) ----
 let lastJson = null, keysLogged = 0, onAutoResult = null;
 function findResult(o) {
@@ -123,8 +162,20 @@ module.exports = function startPlayer(page, shared) {
   let current = 'dice', until = Date.now(), fails = 0, rounds = 0;
   const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const slots = require('./slots')({ page, shared, base: BASE, tell });
-  let nextSlotBreak = Date.now() + rand(40, 70) * 60e3;
+  let nextSlotBreak = Date.now() + rand(90, 150) * 60e3;
+  let chal = { game: 'limbo', target: 10 }, chalAt = 0;
+  const getChal = async () => { if (Date.now() - chalAt > 15e3) { chalAt = Date.now(); const c = await fetch(`${BRAIN}/challenge`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null); if (c && GAMES[c.game]) chal = c; } return chal; };
+  // set the Multiplier box: the challenge target on the challenge game, a modest one otherwise
+  async function setTarget(key) {
+    if (key !== 'limbo' && key !== 'dice') return true;
+    const c = await getChal();
+    const want = key === c.game ? String(c.target) : key === 'limbo' ? pick(['2', '3', '5']) : null;
+    if (!want) return true;
+    const got = await setByLabel(page, /multiplier/i, want);
+    return got !== null && Number(got) === Number(want);
+  }
   function nextGame() {
+    if (Math.random() < 0.5 && chal.game !== current) return chal.game;             // the challenge game, half the time
     const keys = Object.keys(GAMES).filter(k => k !== current);
     const bag = keys.flatMap(k => Array(GAMES[k].weight).fill(k));
     return pick(bag);
@@ -132,8 +183,13 @@ module.exports = function startPlayer(page, shared) {
   async function open(key, by) {
     current = key; until = Date.now() + rand(5, 10) * 60e3; fails = 0;
     log('opening', GAMES[key].name, by ? `(requested by ${by})` : '');
-    await page.goto(`${BASE}/games/housegames-${GAMES[key].slug}`, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('open failed', e.message));
-    await sleep(4000);
+    for (const slug of GAMES[key].slugs) {
+      await page.goto(`${BASE}/games/housegames-${slug}`, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('open failed', e.message));
+      await sleep(4000);
+      const t = await page.title().catch(() => '');
+      if (!/404|not found/i.test(t)) break;
+      log('no page at', slug);
+    }
     await clickText(page, /^manual$/i);
     tell('game', { game: GAMES[key].name, by: by || '' });
   }
@@ -186,18 +242,20 @@ module.exports = function startPlayer(page, shared) {
           nextSlotBreak = Date.now() + rand(40, 70) * 60e3;
           await slots.play(slots.favourite()); await open('dice'); continue;
         }
-        if (Date.now() > until) { await open(current === 'dice' || Math.random() < 0.35 ? nextGame() : 'dice'); continue; }
+        if (Date.now() > until) { await getChal(); await open(current === 'dice' || Math.random() < 0.35 ? nextGame() : 'dice'); continue; }
         if (!/\/games\//.test(page.url())) { await open(current); continue; }
 
         const g = GAMES[current];
         if (await page.getByRole('button', { name: /^log ?in$/i }).first().isVisible().catch(() => false)) { if (++fails % 10 === 1) log('not logged in: waiting'); continue; }
         if (!(await zeroBet(page))) { if (++fails >= 3) { log('bet box not confirmed at 0: skipping', g.name); await open('dice'); } continue; }
+        await setTarget(current);
         if (g.auto && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.3)) { await autoBatch(g); fails = 0; continue; }
         if (g.prep) await g.prep(page);
         if (!(await zeroBet(page))) continue;                         // check again right before the click
         const b = await playButton(page, g.button);
         if (!b) { if (++fails >= 5) { log('no play button on', g.name); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
+        if (g.steps) await runSteps(page, g.steps);
         fails = 0; rounds++;
         await sleep(2500);
         const res = lastJson && lastJson.at >= t0 ? lastJson : null;

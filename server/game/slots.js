@@ -107,7 +107,7 @@ module.exports = function slots({ page, shared, base, tell }) {
     const prov = detect(slotFrame(page)?.url());
     log('provider:', prov.name, prov.bonus ? '(bonus mapped)' : '(no bonus map)');
     tell('game', { game: name, by: by || '', slot: 1, provider: prov.name });
-    const mins = Number(process.env.SLOT_MINUTES) || 8;     // a slot session: 8 min by default
+    const mins = Number(process.env.SLOT_MINUTES) || 5;     // a slot session: 5 min by default (house games come first)
     const end = Date.now() + mins * 60e3; let quiet = 0, spins = 0, bonusUntil = 0;
     while (Date.now() < end && !shared.blocked) {
       const batch = Math.random() < 0.5 ? 10 : 25;
