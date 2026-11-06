@@ -133,16 +133,31 @@ function readWin(text) {
 module.exports = function slots({ page, shared, base, tell }) {
   const deadline = (p, ms) => Promise.race([p, sleep(ms).then(() => null)]);   // nothing waits forever
   let lastNet = 0, lastWin = null, keysLogged = 0;
+  let bonus = null;                                        // { cost, start, vals: [], hit: Set, lastAt }
   page.on('response', async r => {
     try {
       const f = r.frame && r.frame(); if (!f || f === page.mainFrame()) return;
       if (/\.(png|jpe?g|webp|gif|svg|mp3|ogg|m4a|woff2?|json\.gz|js|css|atlas)(\?|$)/i.test(r.url())) return;
       lastNet = Date.now();
       const t = await r.text().catch(() => ''); const w = readWin(t);
-      if (w !== null) { lastWin = { at: Date.now(), win: w }; if (keysLogged++ < 3) log('win value seen in', r.url().split('?')[0].slice(-40)); }
+      if (w !== null) { lastWin = { at: Date.now(), win: w }; if (bonus) onBonusValue(w); if (keysLogged++ < 3) log('win value seen in', r.url().split('?')[0].slice(-40)); }
     } catch {}
   });
   const busyCpu = () => os.loadavg()[0] > os.cpus().length * 0.85;
+  // running bonus total: values that only go up are a running total, otherwise they're per-spin wins to add up
+  const bonusTotal = () => { const v = bonus.vals; if (!v.length) return 0; const up = v.every((x, i) => i === 0 || x >= v[i - 1]); return up ? v[v.length - 1] : v.reduce((a, b) => a + b, 0); };
+  function onBonusValue(w) {
+    if (w <= 0) return;
+    bonus.vals.push(w); bonus.lastAt = Date.now();
+    const total = bonusTotal(), x = bonus.cost ? total / bonus.cost : 0;
+    tell('bonushit', { total: total.toFixed(2), x: x.toFixed(2) });
+    for (const t of [1, 2, 5, 10, 20, 50, 100]) if (x >= t && !bonus.hit.has(t)) { bonus.hit.add(t); tell('bonusmilestone', { x: t, total: total.toFixed(2) }); }
+  }
+  const demoBet = async () => {
+    const fr = slotFrame(page); if (!fr) return 0;
+    const t = await fr.evaluate(() => (document.body && document.body.innerText || '').slice(0, 3000)).catch(() => '');
+    const m = /demo bet[^\d]{0,8}([\d.,]+)/i.exec(t); return m ? parseFloat(m[1].replace(/,/g, '')) : 0;
+  };
 
   async function play(name, by) {
     if (process.env.SLOTS !== '1') return false;
@@ -163,6 +178,10 @@ module.exports = function slots({ page, shared, base, tell }) {
       for (let i = 0; i < batch && Date.now() < end; i++) {
         if (busyCpu()) { log('CPU busy: leaving the slot'); tell('slotheavy', { game: name }); return true; }
         const fr = slotFrame(page); if (!fr) { log('slot frame gone'); return true; }
+        if (bonus && (Date.now() - bonus.start > 150e3 || (Date.now() - bonus.start > 20e3 && Date.now() - bonus.lastAt > 15e3))) {
+          const total = bonusTotal(); tell('bonusend', { game: name, total: total.toFixed(2), cost: bonus.cost, x: bonus.cost ? (total / bonus.cost).toFixed(2) : '' });
+          log(`bonus done: ${total.toFixed(2)} on a ${bonus.cost} buy`); bonus = null; bonusUntil = 0;
+        }
         if (Date.now() < bonusUntil) {                                   // bonus plays by itself: SPACE only to get past 'click to continue'
           await sleep(6000); const f2 = slotFrame(page); const e2 = f2 && await f2.frameElement().catch(() => null);
           if (e2) await e2.focus().catch(() => {}); await page.keyboard.press('Space').catch(() => {}); quiet = 0; continue;
@@ -176,9 +195,10 @@ module.exports = function slots({ page, shared, base, tell }) {
         if (lastNet < t0) { if (++quiet >= 3) { log('slot not reacting to space: leaving'); tell('slotfail', { game: name }); return true; } continue; }
         quiet = 0; spins++;
         const w = lastWin && lastWin.at >= t0 ? lastWin.win : null;
-        tell('round', { game: name, win: w === null ? '' : (w > 0 ? 1 : 0), mult: '', slot: 1 });
+        const bet = await demoBet();
+        tell('round', { game: name, win: w === null ? '' : (w > 0 ? 1 : 0), mult: w && bet ? (w / bet).toFixed(2) : '', slot: 1 });
         if (!(await ensureFun(page))) { log('FUN mode lost: leaving now'); return true; }   // re-check every spin
-        if ((await ask('/bonus/take')).go && await buyBonus(prov, name)) { bonusUntil = Date.now() + 90e3; quiet = 0; }   // chat voted for a bonus buy
+        if ((await ask('/bonus/take')).go && await buyBonus(prov, name)) { bonusUntil = Date.now() + 160e3; quiet = 0; }   // chat voted for a bonus buy
       }
       if ((await ask('/queue/size')).n > 0) { log('queue waiting: wrapping up', name); break; }   // finish this batch, then the queue
       await sleep(rand(2000, 4000));
@@ -202,7 +222,7 @@ module.exports = function slots({ page, shared, base, tell }) {
       }
       if (!best && buys.length) best = buys[0];
       if (best) best.setAttribute('data-hubie-buy', '1');
-      return buys.length;
+      return buys.length ? (bestPrice < Infinity ? bestPrice : -1) : 0;
     }).catch(() => 0);
     if (!n) { await page.keyboard.press('Escape').catch(() => {}); return false; }
     await fr.locator('[data-hubie-buy="1"]').first().click({ timeout: 3000 }).catch(() => {}); await sleep(1800);
@@ -210,14 +230,16 @@ module.exports = function slots({ page, shared, base, tell }) {
     if (!(await ok.isVisible().catch(() => false))) return false;
     if (!(await ensureFun(page))) { const back = fr.getByText(/^\s*(back|cancel|no)\s*$/i).first(); await back.click({ timeout: 3000 }).catch(() => {}); return false; }   // last check before OK
     await ok.click({ timeout: 3000 }).catch(() => {}); await sleep(2000);
-    return true;
+    return n > 0 ? n : true;                                      // the price, if we could read it
   }
 
   // bonus buy: FUN mode confirmed before and after
   async function buyBonus(prov, name) {
     if (!(await ensureFun(page))) { tell('bonusfail', { game: name }); return false; }
     const frT = slotFrame(page);
-    if (frT && await buyByText(frT)) { log('bonus bought on', name, '(FUN mode, by text)'); tell('bonus', { game: name }); return true; }
+    const price = frT ? await buyByText(frT) : false;
+    if (price) { const bet = await demoBet(); bonus = { cost: price > 0 && price !== true ? price : bet * 100 || 0, start: Date.now(), vals: [], hit: new Set(), lastAt: Date.now() };
+      log('bonus bought on', name, '(FUN mode, by text), cost', bonus.cost); tell('bonus', { game: name, cost: bonus.cost }); return true; }
     if (!prov.bonus) { tell('bonusnomap', { game: name, provider: prov.name }); return false; }
     if (!(await ensureFun(page))) { tell('bonusfail', { game: name }); return false; }
     const fr = slotFrame(page); const el = fr && await fr.frameElement().catch(() => null);
