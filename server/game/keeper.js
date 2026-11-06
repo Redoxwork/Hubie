@@ -30,7 +30,7 @@ async function goLounge(page) {
 
 // Calm mode: pause the page's animations and videos so the stream stays sharp and light (off: HUBIE_CALM=0)
 async function calm(page) {
-  if (process.env.HUBIE_CALM === '0' || /\/games\//.test(page.url())) return;
+  if (process.env.HUBIE_CALM === '0' || shared.playing || /\/games\//.test(page.url())) return;
   const done = await page.evaluate(() => {
     if (!document.getElementById('hubie-calm')) {
       const st = document.createElement('style'); st.id = 'hubie-calm';

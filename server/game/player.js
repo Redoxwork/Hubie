@@ -33,7 +33,7 @@ function resolve(n) {
 // ---- page helpers ----
 async function clickText(page, re) {
   const el = page.locator('button, [role=button], [role=tab]').filter({ hasText: re }).first();
-  if (await el.isVisible().catch(() => false)) { const t = (await el.innerText().catch(() => '')).trim(); if (!NEVER.test(t)) await el.click().catch(() => {}); }
+  if (await el.isVisible().catch(() => false)) { const t = (await el.innerText().catch(() => '')).trim(); if (!NEVER.test(t)) await el.click({ timeout: 3000 }).catch(() => {}); }
 }
 async function setNumber(page, labelRe, value) {
   const ok = await page.evaluate(({ src }) => {
@@ -44,7 +44,7 @@ async function setNumber(page, labelRe, value) {
     }
     return false;
   }, { src: labelRe.source }).catch(() => false);
-  if (ok) await page.locator('[data-hubie-set="1"]').first().fill(value).catch(() => {});
+  if (ok) await page.locator('[data-hubie-set="1"]').first().fill(value, { timeout: 3000 }).catch(() => {});
 }
 // Find the Bet Amount box, force it to 0, and confirm. Returns true only if it reads exactly 0.
 async function zeroBet(page) {
@@ -57,7 +57,7 @@ async function zeroBet(page) {
   }).catch(() => null);
   let v = await read();
   if (v === null) return false;
-  if (parseFloat(v || '0') !== 0) { await page.locator('[data-hubie-bet="1"]').first().fill('0').catch(() => {}); await sleep(300); v = await read(); }
+  if (parseFloat(v || '0') !== 0) { await page.locator('[data-hubie-bet="1"]').first().fill('0', { timeout: 3000 }).catch(() => {}); await sleep(300); v = await read(); }
   return v !== null && parseFloat(v || '0') === 0;
 }
 async function playButton(page, re) {
@@ -85,7 +85,7 @@ async function setByLabel(page, labelRe, value) {
   }, { src: labelRe.source }).catch(() => false);
   if (!ok) return null;
   const el = page.locator('[data-hubie-n="1"]').first();
-  await el.fill(String(value)).catch(() => {});
+  await el.fill(String(value), { timeout: 3000 }).catch(() => {});
   return el.inputValue().catch(() => null);
 }
 const readBet = page => page.locator('[data-hubie-bet="1"]').first().inputValue().catch(() => null);
@@ -117,9 +117,11 @@ function sniff(page) {
 
 // ---- the loop ----
 module.exports = function startPlayer(page, shared) {
+  page.setDefaultTimeout(8000);                       // no action can hang the loop
+  shared.playing = true;
   sniff(page);
   let current = 'dice', until = Date.now(), fails = 0, rounds = 0;
-  const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`).catch(() => {});
+  const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const slots = require('./slots')({ page, shared, base: BASE, tell });
   let nextSlotBreak = Date.now() + rand(40, 70) * 60e3;
   function nextGame() {
@@ -149,16 +151,16 @@ module.exports = function startPlayer(page, shared) {
     onAutoResult = res => { got++; rounds++; tell('round', { game: g.name, win: res.win ? 1 : 0, mult: res.mult }); };
     tell('auto', { game: g.name, n });
     log(`auto: ${n} bets on ${g.name} at 0`);
-    await start.click();
+    await start.click({ timeout: 3000 });
     const stop = page.locator('button').filter({ hasText: /stop autobet/i }).first();
     const t0 = Date.now();
     while (Date.now() - t0 < n * 4000 + 20000) {
       await sleep(1000);
       const v = await readBet(page);
-      if (v !== null && parseFloat(v || '0') !== 0) { log('auto: BET BOX NOT 0, stopping now'); await stop.click().catch(() => {}); break; }
+      if (v !== null && parseFloat(v || '0') !== 0) { log('auto: BET BOX NOT 0, stopping now'); await stop.click({ timeout: 3000 }).catch(() => {}); break; }
       if (shared.blocked || got >= n || !(await stop.isVisible().catch(() => false))) break;
     }
-    if (await stop.isVisible().catch(() => false)) await stop.click().catch(() => {});
+    if (await stop.isVisible().catch(() => false)) await stop.click({ timeout: 3000 }).catch(() => {});
     onAutoResult = null;
     await sleep(1000); await clickText(page, /^manual$/i);
     return true;
@@ -172,7 +174,7 @@ module.exports = function startPlayer(page, shared) {
       if (shared.blocked || shared.lounge) continue;
       try {
         // chat request first, then rotation
-        const q = await fetch(`${BRAIN}/queue`).then(r => r.json()).catch(() => null);
+        const q = await fetch(`${BRAIN}/queue`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null);
         const want = q && resolve(q.game);
         if (q && q.game && !want) {                                    // not an original: try it as a slot (Fun mode)
           if (process.env.SLOTS === '1') { await slots.play(q.game, q.by); await open('dice'); }
@@ -195,7 +197,7 @@ module.exports = function startPlayer(page, shared) {
         if (!(await zeroBet(page))) continue;                         // check again right before the click
         const b = await playButton(page, g.button);
         if (!b) { if (++fails >= 5) { log('no play button on', g.name); await open(nextGame()); } continue; }
-        const t0 = Date.now(); await b.click();
+        const t0 = Date.now(); await b.click({ timeout: 3000 });
         fails = 0; rounds++;
         await sleep(2500);
         const res = lastJson && lastJson.at >= t0 ? lastJson : null;
