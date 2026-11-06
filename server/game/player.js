@@ -85,6 +85,7 @@ async function clickText(ui, re) {
 // fast mode: switch on a game's Turbo / Instant / Quick spin toggle if it has one (only once per game: the
 // game remembers it, so clicking again later could switch it back off)
 const turboDone = {};
+const speed = {};   // per game: 'on' | 'no gain' | 'none' | 'fast enough'
 async function turbo(ui, g) {
   if (process.env.TURBO === '0' || turboDone[g.name]) return; turboDone[g.name] = true;
   try {
@@ -102,6 +103,34 @@ async function turbo(ui, g) {
     if (r === 'off') { await ui.locator('[data-hubie-turbo="1"]').first().click({ timeout: 2000 }); log(`auto: turbo/instant mode on for ${g.name}`); await new Promise(r => setTimeout(r, 600)); }
     else if (r === 'already on') log(`auto: turbo already on for ${g.name}`);
   } catch {}
+}
+
+// the speed gauge icon in the game footer (Fair · history · GAUGE · sound · stats · star · settings)
+async function speedBtn(ui) {
+  await deep(ui);
+  const r = await ui.evaluate(() => {
+    document.querySelectorAll('[data-hubie-speed]').forEach(e => e.removeAttribute('data-hubie-speed'));
+    const vis = e => e && e.getClientRects().length && e.getBoundingClientRect().width > 0;
+    const all = window.__deepAll('button,[role=button]').filter(vis);
+    const named = all.find(b => /speed|turbo|fast|instant|quick/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.title || '') + ' ' + (b.getAttribute('data-tooltip') || '')));
+    let pickB = named, how = 'label';
+    if (!pickB) {
+      const fair = all.find(b => /^\s*fair\s*$/i.test(b.textContent || ''));
+      if (!fair) return null;
+      const fy = fair.getBoundingClientRect(); const mid = fy.top + fy.height / 2;
+      const row = all.filter(b => b !== fair && !(b.textContent || '').trim() && b.querySelector('svg') && Math.abs(b.getBoundingClientRect().top + b.getBoundingClientRect().height / 2 - mid) < 20 && b.getBoundingClientRect().left > fy.left)
+        .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+      if (!row.length) return null;
+      const sound = row.findIndex(b => /sound|volume|mute|audio/i.test((b.getAttribute('aria-label') || '') + (b.title || '')));
+      const coloured = row.find(b => { const c = getComputedStyle(b.querySelector('svg')).color.match(/\d+/g) || []; const [r, g, bl] = c.map(Number); return r > 150 && g > 100 && bl < 90; });
+      if (sound > 0) { pickB = row[sound - 1]; how = 'next to sound'; }
+      else if (coloured) { pickB = coloured; how = 'gold icon'; }
+      else if (row.length >= 5) { pickB = row[1]; how = 'footer order'; }
+    }
+    if (!pickB) return null;
+    pickB.setAttribute('data-hubie-speed', '1'); return how;
+  }).catch(() => null);
+  return r;
 }
 
 async function clickAny(ui, re) {
@@ -678,7 +707,7 @@ module.exports = function startPlayer(page, shared) {
     log(`auto: ${n} bets on ${g.name} at 0`);
     await start.click({ timeout: 3000 });
     await sleep(3000);
-    const t0 = Date.now(); let why = 'done', lastQ = 0, lastLog = Date.now();
+    const t0 = Date.now(); let why = 'done', lastQ = 0, lastLog = Date.now(); let speedCheck = null;
     while (Date.now() - t0 < Math.min(n * 4000 + 30000, MAX_MS)) {
       await sleep(1000);
       const v = await readBet(ui);
@@ -689,6 +718,32 @@ module.exports = function startPlayer(page, shared) {
       // finished: no results for a while and no stop button
       if (Date.now() - lastRes > 10e3 && !(await autoRunning(ui))) break;
       if (Date.now() - lastLog > 60e3) { lastLog = Date.now(); log(`auto: ${got}/${n} on ${g.name}`); }
+      // slow game? try the speed gauge once: keep it only if bets really get faster, else switch it back
+      if (process.env.TURBO !== '0' && !speed[g.name] && got >= 8 && Date.now() - t0 > 40e3) {
+        const before = got / ((Date.now() - t0) / 60e3);
+        if (before < 35) {
+          const how = await speedBtn(ui);
+          if (!how) speed[g.name] = 'none';
+          else {
+            speed[g.name] = 'testing'; const g0 = got, s0 = Date.now();
+            await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {});
+            await sleep(800); await ui.keyboard.press('Escape').catch(() => {});
+            const fastOpt = ui.locator('button:visible,[role=menuitem]:visible,[role=option]:visible').filter({ hasText: /^\s*(turbo|fastest|instant|fast|3x|x3)\s*$/i }).first();
+            if (await fastOpt.isVisible().catch(() => false)) await fastOpt.click({ timeout: 2000 }).catch(() => {});
+            speedCheck = { g0, s0, before, how };
+          }
+        } else speed[g.name] = 'fast enough';
+      }
+      if (speedCheck && Date.now() - speedCheck.s0 > 45e3) {
+        const after = (got - speedCheck.g0) / ((Date.now() - speedCheck.s0) / 60e3);
+        if (after > speedCheck.before * 1.25) { speed[g.name] = 'on'; log(`auto: speed button on for ${g.name} (${Math.round(speedCheck.before)} -> ${Math.round(after)} bets/min)`); }
+        else {
+          speed[g.name] = 'no gain';
+          if (await speedBtn(ui)) { await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {}); await sleep(500); await ui.keyboard.press('Escape').catch(() => {}); }
+          log(`auto: speed button made no difference on ${g.name} (${Math.round(speedCheck.before)} -> ${Math.round(after)}/min), switched it back`);
+        }
+        speedCheck = null;
+      }
     }
     if (Date.now() - t0 >= MAX_MS) why = 'time';
     for (let k = 0; k < 3 && await autoRunning(ui); k++) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(1500); }
@@ -802,4 +857,4 @@ module.exports = function startPlayer(page, shared) {
 };
 module.exports.GAMES = GAMES;
 module.exports.resolve = resolve;
-module.exports.turbo = turbo;
+module.exports.turbo = turbo; module.exports.speedBtn = speedBtn;
