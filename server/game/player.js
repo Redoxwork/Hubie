@@ -133,6 +133,24 @@ async function speedBtn(ui) {
   return r;
 }
 
+// keep the game itself on screen: if the page got scrolled down (to the House Games row / Live Bets),
+// scroll the game panel back to the top of the view
+async function keepInView(ui) {
+  await deep(ui);
+  const r = await ui.evaluate(() => {
+    const vis = e => e && e.getClientRects().length;
+    const lab = window.__deepAll('label,span,div,p').find(e => vis(e) && e.children.length <= 2 && /^\s*bet amount\s*$/i.test(e.textContent || '') && !e.closest('table,[role=table],thead'));
+    let top = lab || window.__deepAll('canvas').find(c => vis(c) && c.width > 200);
+    if (!top) return null;
+    while (top.getRootNode() !== document && top.getRootNode().host) top = top.getRootNode().host;   // out of the game's shadow DOM
+    let box = top; for (let i = 0; i < 12 && box.parentElement && box.parentElement.getBoundingClientRect().height < innerHeight * 1.6; i++) box = box.parentElement;   // the whole game panel
+    const t = box.getBoundingClientRect().top;
+    if (t > -40 && t < innerHeight * 0.35) return 'ok';
+    box.scrollIntoView({ block: 'start' }); window.scrollBy(0, -70); return `scrolled (${Math.round(t)})`;
+  }).catch(() => null);
+  return r;
+}
+
 async function clickAny(ui, re) {
   const all = ui.getByText(re);
   const n = Math.min(await all.count().catch(() => 0), 10);
@@ -706,9 +724,10 @@ module.exports = function startPlayer(page, shared) {
     log(`auto: ${n} bets on ${g.name} at 0`);
     await start.click({ timeout: 3000 });
     await sleep(3000);
-    const t0 = Date.now(); let why = 'done', lastQ = 0, lastLog = Date.now(); let speedCheck = null;
+    const t0 = Date.now(); let why = 'done', lastQ = 0, lastLog = Date.now(); let speedCheck = null, lastView = 0;
     while (Date.now() - t0 < Math.min(n * 4000 + 30000, MAX_MS)) {
       await sleep(1000);
+      if (Date.now() - lastView > 10e3) { lastView = Date.now(); const kv = await keepInView(ui); if (kv && kv !== 'ok') log('view: game was off screen, scrolled back', kv); }
       const v = await readBet(ui);
       if (v !== null && v !== '' && parseFloat(v) !== 0) { log('auto: BET BOX NOT 0, stopping now'); why = 'safety'; break; }
       if (shared.blocked) { why = 'blocked'; break; }
@@ -766,6 +785,7 @@ module.exports = function startPlayer(page, shared) {
     { const keep = chal; chal = {}; current = 'dice'; const first = GAMES[process.env.START_GAME] ? process.env.START_GAME : nextGame(); current = ''; await open(first); chal = keep; }   // start on a random original (or START_GAME)
     for (;;) {
       await sleep(rand(4000, 7000));
+      { const v = await keepInView(ui); if (v && v !== 'ok') log('view: game was off screen, scrolled back', v); }
       if (shared.blocked || shared.lounge || shared.loggedOut || shared.loggingIn) { shared.lastRound = Date.now(); continue; }
       // stall watchdog: no round for 12 min -> reopen the game; 25 min -> restart the game bot
       const idle = Date.now() - (shared.lastRound || Date.now());
@@ -861,4 +881,4 @@ module.exports = function startPlayer(page, shared) {
 };
 module.exports.GAMES = GAMES;
 module.exports.resolve = resolve;
-module.exports.turbo = turbo; module.exports.speedBtn = speedBtn;
+module.exports.turbo = turbo; module.exports.speedBtn = speedBtn; module.exports.keepInView = keepInView;
