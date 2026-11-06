@@ -85,7 +85,7 @@ async function clickText(ui, re) {
 // fast mode: switch on a game's Turbo / Instant / Quick spin toggle if it has one (only once per game: the
 // game remembers it, so clicking again later could switch it back off)
 const turboDone = {};
-const speed = {};   // per game: 'on' | 'no gain' | 'none' | 'fast enough'
+const speed = {}, speedTries = {};   // per game: 'on' | 'no gain' | 'none' | 'fast enough'
 async function turbo(ui, g) {
   if (process.env.TURBO === '0' || turboDone[g.name]) return; turboDone[g.name] = true;
   try {
@@ -109,7 +109,7 @@ async function turbo(ui, g) {
 async function speedBtn(ui) {
   await deep(ui);
   const r = await ui.evaluate(() => {
-    document.querySelectorAll('[data-hubie-speed]').forEach(e => e.removeAttribute('data-hubie-speed'));
+    window.__deepAll('[data-hubie-speed]').forEach(e => e.removeAttribute('data-hubie-speed'));   // clear old marks (inside the game panel too)
     const vis = e => e && e.getClientRects().length && e.getBoundingClientRect().width > 0;
     const all = window.__deepAll('button,[role=button]').filter(vis);
     const named = all.find(b => /speed|turbo|fast|instant|quick/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.title || '') + ' ' + (b.getAttribute('data-tooltip') || '')));
@@ -726,9 +726,10 @@ module.exports = function startPlayer(page, shared) {
           else {
             speed[g.name] = 'testing'; const g0 = got, s0 = Date.now();
             await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {});
-            await sleep(800); await ui.keyboard.press('Escape').catch(() => {});
+            await sleep(800);
             const fastOpt = ui.locator('button:visible,[role=menuitem]:visible,[role=option]:visible').filter({ hasText: /^\s*(turbo|fastest|instant|fast|3x|x3)\s*$/i }).first();
             if (await fastOpt.isVisible().catch(() => false)) await fastOpt.click({ timeout: 2000 }).catch(() => {});
+            await sleep(400); if (await ui.locator('[role=dialog]:visible,[role=menu]:visible').count().catch(() => 0)) await ui.keyboard.press('Escape').catch(() => {});
             speedCheck = { g0, s0, before, how };
           }
         } else speed[g.name] = 'fast enough';
@@ -738,13 +739,17 @@ module.exports = function startPlayer(page, shared) {
         if (after > speedCheck.before * 1.25) { speed[g.name] = 'on'; log(`auto: speed button on for ${g.name} (${Math.round(speedCheck.before)} -> ${Math.round(after)} bets/min)`); }
         else {
           speed[g.name] = 'no gain';
-          if (await speedBtn(ui)) { await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {}); await sleep(500); await ui.keyboard.press('Escape').catch(() => {}); }
+          if (await speedBtn(ui)) { await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {}); await sleep(500); if (await ui.locator('[role=dialog]:visible,[role=menu]:visible').count().catch(() => 0)) await ui.keyboard.press('Escape').catch(() => {}); }
           log(`auto: speed button made no difference on ${g.name} (${Math.round(speedCheck.before)} -> ${Math.round(after)}/min), switched it back`);
         }
         speedCheck = null;
       }
     }
     if (Date.now() - t0 >= MAX_MS) why = 'time';
+    if (speedCheck) {                                   // run ended mid speed-test: put the gauge back, try again next run (max 2 tries)
+      if (await speedBtn(ui)) await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {});
+      speedTries[g.name] = (speedTries[g.name] || 0) + 1; speed[g.name] = speedTries[g.name] >= 2 ? 'unsure' : undefined; speedCheck = null;
+    }
     for (let k = 0; k < 3 && await autoRunning(ui); k++) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(1500); }
     onAutoResult = null;
     log(`auto: ${got} bets on ${g.name}, ${wins} wins, best ${best}x (${why})`);
