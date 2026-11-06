@@ -474,6 +474,7 @@ function onFeed(j) {
       } })(it, 0);
     if (typeof it.game_name === 'string') game = it.game_name; else if (!game && typeof it.game === 'string') game = it.game;
     if (typeof it.player_username === 'string') user = it.player_username;
+    if (it.is_private) user = '';                                     // private players are never named
     if (typeof it.multiplier === 'number') mult = it.multiplier; else if (typeof it.multiplier === 'string') mult = parseFloat(it.multiplier) || mult;
     if (it.is_win === false) mult = 0;
     const key = id || `${user}|${game}|${mult}`;
