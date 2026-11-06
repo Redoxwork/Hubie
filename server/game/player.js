@@ -18,7 +18,7 @@ const GAMES = {
   coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], auto: true, button: /^(bet|flip)$/i, weight: 2,
               prep: async page => { await clickText(page, Math.random() < 0.5 ? /^\s*heads\s*$/i : /^\s*tails\s*$/i); await setRange(page, /coins/, pick([1, 1, 1, 2, 3])); await setRange(page, /flips/, pick([1, 1, 2, 3])); } },
   plinko:   { name: 'Plinko',   slugs: ['plinko'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|drop)$/i, weight: 2,
-              prep: page => setRange(page, /^\s*rows/, pick([10, 12, 12, 14, 16])) },
+              prep: page => setRange(page, /^\s*rows/, pick([10, 12, 12, 14, 14])) },
   wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|spin)$/i, weight: 2,
               prep: page => setRange(page, /segments/, pick([20, 30, 40, 40, 50])) },
   keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 5,
