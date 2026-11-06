@@ -90,14 +90,23 @@ async function zeroBet(ui) {
     const own = el => [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').trim();
     const labels = D('label,span,div,p,h1,h2,h3,h4,h5,h6,legend').filter(el => vis(el) && el.children.length <= 4 &&
       (/^(bet amount|chip value)\b/i.test(own(el)) || /^\s*(bet amount|chip value)\s*$/i.test(el.textContent || '')));
-    for (const lab of labels) {
+    // never the "Live Bets" feed: its "Bet Amount" column shows other players' bets
+    const inFeed = el => { for (let p = el, i = 0; p && i < 12; i++, p = up(p)) { if (/^(TABLE|THEAD|TBODY|TR|TH|TD)$/.test(p.tagName) || /row|cell|columnheader|grid/.test(p.getAttribute && p.getAttribute('role') || '')) return true; if (/^\s*live bets/i.test(T(p).slice(0, 30))) return true; } return false; };
+    const real = labels.filter(l => !inFeed(l));
+    // 1) a label with an editable box right next to it (the real bet box)
+    for (const lab of real) {
       let p = lab;
-      for (let i = 0; i < 6 && p; i++, p = up(p)) {
-        const ed = D(EDIT, p.shadowRoot || p).find(ok) || (p.querySelectorAll ? [...p.querySelectorAll(EDIT)].find(ok) : null);
-        if (ed) { ed.setAttribute('data-hubie-bet', '1'); return { v: 'value' in ed && ed.tagName !== 'DIV' ? ed.value : ed.textContent, edit: true }; }
-        const txt = T(p).replace(/,/g, '');
-        const m = /bet amount[^\d]{0,40}?(\d+(?:\.\d+)?)/i.exec(txt);
-        if (m && i >= 1) return { v: m[1], edit: false };
+      for (let i = 0; i < 4 && p; i++, p = up(p)) {
+        const ed = D(EDIT, p).find(ok);
+        if (ed && !inFeed(ed)) { ed.setAttribute('data-hubie-bet', '1'); return { v: 'value' in ed && ed.tagName !== 'DIV' ? (ed.value || ed.placeholder && '' ) : ed.textContent, edit: true }; }
+      }
+    }
+    // 2) no editable box: the amount printed next to the label
+    for (const lab of real) {
+      let p = up(lab);
+      for (let i = 0; i < 2 && p; i++, p = up(p)) {
+        const m = /bet amount[^\d]{0,40}?(\d+(?:\.\d+)?)/i.exec(T(p).replace(/,/g, ''));
+        if (m) return { v: m[1], edit: false };
       }
     }
     return null;
