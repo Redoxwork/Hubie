@@ -14,11 +14,17 @@ MODEL, VOICES = os.path.join(V, "kokoro-v1.0.onnx"), os.path.join(V, "voices-v1.
 try:                                # cap CPU use: by default onnxruntime grabs every core
     import onnxruntime as ort
     so = ort.SessionOptions(); so.intra_op_num_threads = THREADS; so.inter_op_num_threads = 1
+    so.enable_cpu_mem_arena = False; so.enable_mem_pattern = False   # no ever-growing memory pool on long runs
     k = Kokoro.from_session(ort.InferenceSession(MODEL, so, providers=["CPUExecutionProvider"]), VOICES)
 except Exception as e:
     print(json.dumps({"note": f"thread cap not applied: {e}"}), flush=True)
     k = Kokoro(MODEL, VOICES)
 print(json.dumps({"ready": True}), flush=True)
+LIMIT_MB = int(os.environ.get("TTS_MAX_MB", "1200"))
+def rss_mb():
+    try:
+        with open("/proc/self/statm") as f: return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") // 1048576
+    except Exception: return 0
 
 for line in sys.stdin:
     m = {}
@@ -32,3 +38,6 @@ for line in sys.stdin:
         print(json.dumps({"id": m["id"], "file": name, "dur": len(audio) / sr}), flush=True)
     except Exception as e:  # keep the worker alive whatever happens
         print(json.dumps({"id": m.get("id"), "error": str(e)}), flush=True)
+    if rss_mb() > LIMIT_MB:   # between sentences: hand over to a fresh worker (the manager restarts it in ~3 s)
+        print(json.dumps({"note": f"recycling voice worker at {rss_mb()} MB"}), flush=True)
+        sys.exit(0)

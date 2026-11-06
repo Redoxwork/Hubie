@@ -27,7 +27,7 @@ module.exports = ({ H, DATA, log }) => {
     proc.on('exit', c => {
       log('tts: worker exited', c, '- restarting');
       for (const w of waiting.values()) w.reject(new Error('tts worker died'));
-      waiting.clear(); setTimeout(start, 3000);
+      waiting.clear(); setTimeout(start, c === 0 ? 500 : 3000);
     });
   }
   if (ok) start();
@@ -42,8 +42,9 @@ module.exports = ({ H, DATA, log }) => {
   }, 5 * 60e3);
 
   function speak(text, keep) {
-    if (!ok || !proc) return Promise.resolve(null);
+    if (!ok || !proc || proc.exitCode !== null || !proc.stdin.writable) return Promise.resolve(null);   // restarting: captions only for a moment
     const id = keep ? `keep${++n}` : ++n;
+    proc.stdin.on('error', () => {});
     proc.stdin.write(JSON.stringify({ id, text, voice: process.env.HUBIE_VOICE || 'am_puck',
       speed: Number(process.env.HUBIE_SPEED) || 1.05 }) + '\n');
     return Promise.race([
