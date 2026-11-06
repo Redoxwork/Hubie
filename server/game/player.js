@@ -695,7 +695,6 @@ module.exports = function startPlayer(page, shared) {
     if (!set && !autoDiagDone) { autoDiagDone = true; await autoDiag(ui); }
     if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(ui, /^manual$/i); return false; }
     if (!(await zeroBet(ui))) { await clickText(ui, /^manual$/i); return false; }
-    await turbo(ui, g);
     const start = ui.locator('button:visible').filter({ hasText: /^\s*(start autobet|start auto|start)\s*$/i }).first();
     if (!(await start.isVisible().catch(() => false)) || !(await start.isEnabled().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(ui, /^manual$/i); return false; }
     let got = 0, wins = 0, best = 0, lastRes = Date.now();
@@ -721,7 +720,7 @@ module.exports = function startPlayer(page, shared) {
       // slow game? try the speed gauge once: keep it only if bets really get faster, else switch it back
       if (process.env.TURBO !== '0' && !speed[g.name] && got >= 8 && Date.now() - t0 > 40e3) {
         const before = got / ((Date.now() - t0) / 60e3);
-        if (before < 35) {
+        if (before < 80) {
           const how = await speedBtn(ui);
           if (!how) speed[g.name] = 'none';
           else {
@@ -759,7 +758,7 @@ module.exports = function startPlayer(page, shared) {
     log('on: playing House Originals at bet 0');
     current = '';
     await findGames().catch(e => log('findGames', e.message));
-    await open(GAMES[process.env.START_GAME] ? process.env.START_GAME : nextGame());   // start on a random original (or START_GAME)
+    { const keep = chal; chal = {}; current = 'dice'; const first = GAMES[process.env.START_GAME] ? process.env.START_GAME : nextGame(); current = ''; await open(first); chal = keep; }   // start on a random original (or START_GAME)
     for (;;) {
       await sleep(rand(4000, 7000));
       if (shared.blocked || shared.lounge || shared.loggedOut || shared.loggingIn) { shared.lastRound = Date.now(); continue; }
