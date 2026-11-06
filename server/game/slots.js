@@ -172,6 +172,14 @@ module.exports = function slots({ page, shared, base, tell }) {
     if (prov.id === 'unknown') { const { PROVIDERS } = require('./providers'); prov = PROVIDERS.find(p => p.match.test(cardText)) || prov; }
     log('provider:', prov.name, prov.bonus ? '(bonus mapped)' : '(no bonus map)');
     tell('game', { game: name, by: by || '', slot: 1, provider: prov.name });
+    // intro / splash screens (Pragmatic "click to continue"): one click in the middle of the slot, then SPACE.
+    // The middle of an intro screen is just the splash picture; buy buttons sit at the edges of the game screen.
+    for (let k = 0; k < 2; k++) {
+      const fr0 = slotFrame(page), el0 = fr0 && await fr0.frameElement().catch(() => null);
+      const box = el0 && await el0.boundingBox().catch(() => null);
+      if (box) { await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.55).catch(() => {}); await sleep(1500); }
+      await page.keyboard.press('Space').catch(() => {}); await sleep(2500);
+    }
     const mins = Number(process.env.SLOT_MINUTES) || 35;    // a slot session: 35 min of autoplay by default
     const end = Date.now() + mins * 60e3; let quiet = 0, spins = 0, bonusUntil = 0, wins = 0, best = 0;
     const SIZES = String(process.env.SLOT_SPINS || '200,300,300,500').split(',').map(Number).filter(x => x > 0);

@@ -23,11 +23,11 @@ const GAMES = {
               prep: page => setRange(page, /segments/, pick([20, 30, 40, 40, 50])) },
   keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 5,
               prep: page => kenoPick(page) },
-  maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
+  maxwin:   { name: 'Max Win',  slugs: ['max-win', 'maxwin', 'max-win-machine'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
   crash:    { name: 'Crash',    slugs: ['crash'], button: /^\s*(bet|place bet|bet \(next round\)|join)\s*$/i, weight: 2, crash: true,
               prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out/i, pick(['1.5', '2', '3', '5', '10', '10', '25', '50', '100'])) },
   // games with steps inside a round: start, take a few steps, cash out
-  road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'road'], button: /^(bet|play|start)$/i, weight: 3,
+  road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'hubie-road', 'road'], button: /^(bet|play|start)$/i, weight: 3,
               steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 2, max: 5, cap: 12, cash: /^cash ?out/i } },
   tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2, risk: ['easy', 'medium', 'hard'],
               steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 2, max: 5, cap: 9, cash: /^cash ?out/i } },
@@ -545,6 +545,28 @@ module.exports = function startPlayer(page, shared) {
   const noAuto = {}, autoMiss = new Proxy({}, { get: (o, k) => o[k] || 0 });
   const benched = {};                                    // game -> until (keeps failing: skip it for a while)
   const bench = (k, why) => { if (k === 'dice') return; benched[k] = Date.now() + 2 * 3600e3; log(`benching ${GAMES[k].name} for 2h (${why})`); };
+  const gameUrls = {}; let urlsFound = 0;
+  const is404 = pg => pg.evaluate(() => /page not found|^\s*404\b/i.test((document.title || '') + ' ' + (document.body ? document.body.innerText.slice(0, 400) : ''))).catch(() => false);
+  const norm = t => String(t || '').toLowerCase().replace(/[^a-z]/g, '');
+  // visit the lobby pages and match every game link to our Originals by its name/picture text
+  async function findGames() {
+    urlsFound = Date.now();
+    const links = [];
+    for (const p of ['/games', '/casino', '/casino/house-games', '/originals']) {
+      await page.goto(BASE + p, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+      await sleep(3000); if (await is404(page)) continue;
+      for (let k = 0; k < 3; k++) { await page.mouse.wheel(0, 1500).catch(() => {}); await sleep(500); }
+      links.push(...await page.evaluate(() => [...document.querySelectorAll('a[href]')].map(a => ({ href: a.href,
+        text: [a.innerText, a.getAttribute('aria-label'), a.title, ...[...a.querySelectorAll('img')].map(i => i.alt)].join(' ') }))).catch(() => []));
+      if (links.filter(l => /housegames-|originals?\//i.test(l.href)).length >= 10) break;
+    }
+    for (const [key, g] of Object.entries(GAMES)) {
+      const names = [g.name, ...g.slugs].map(norm);
+      const hit = links.find(l => /\/(games?|casino|originals?)\//.test(l.href) && names.some(n => n.length > 2 && (norm(l.text).includes(n) || norm(l.href.split('/').pop()).includes(n))));
+      if (hit) gameUrls[key] = hit.href.split('?')[0];
+    }
+    log('game links found:', Object.entries(gameUrls).map(([k, u]) => `${k}=${u.replace(BASE, '')}`).join(' '));
+  }
   const recent = [];
   function nextGame() {
     const ok = k => !(benched[k] > Date.now());
@@ -558,13 +580,21 @@ module.exports = function startPlayer(page, shared) {
     recent.push(key); if (recent.length > 5) recent.shift();
     current = key; until = Date.now() + rand(5, 10) * 60e3; fails = 0; openedAt = Date.now();
     log('opening', GAMES[key].name, by ? `(requested by ${by})` : '');
-    for (const slug of GAMES[key].slugs) {
-      await page.goto(`${BASE}/games/housegames-${slug}`, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('open failed', e.message));
+    let ok = false;
+    const urls = [...(gameUrls[key] ? [gameUrls[key]] : []), ...GAMES[key].slugs.map(sl => `${BASE}/games/housegames-${sl}`)];
+    for (const url of [...new Set(urls)]) {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('open failed', e.message));
       await sleep(4000);
-      const t = await page.title().catch(() => '');
-      if (!/404|not found/i.test(t)) break;
-      log('no page at', slug);
+      if (!(await is404(page))) { ok = true; gameUrls[key] = url; break; }
+      log('no page at', url);
     }
+    if (!ok && !(urlsFound > Date.now() - 30 * 60e3)) { await findGames(); if (gameUrls[key]) { await page.goto(gameUrls[key], { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {}); await sleep(4000); ok = !(await is404(page)); } }
+    if (!ok) {
+      log('could not find a page for', GAMES[key].name);
+      if (by) tell('unknown', { game: GAMES[key].name, by });
+      bench(key, 'no page'); const nk = nextGame(); if (nk !== key) return open(nk);
+    }
+    ui = await findUI(page);
     await clickText(ui, /^manual$/i);
     tell('game', { game: GAMES[key].name, by: by || '' });
     await applySettings(key);
@@ -632,6 +662,7 @@ module.exports = function startPlayer(page, shared) {
   (async () => {
     log('on: playing House Originals at bet 0');
     current = '';
+    await findGames().catch(e => log('findGames', e.message));
     await open(nextGame());                         // start on a random original
     for (;;) {
       await sleep(rand(4000, 7000));
