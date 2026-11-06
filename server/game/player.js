@@ -159,6 +159,8 @@ async function diag(page) {
     log('diag', f.url().slice(0, 60), `\n   shadow hosts: ${info.shadows} · playwright visible inputs: ${pw}`, '\n   visible inputs:', info.vin.join(' ; ') || 'none', '\n   html:', info.html);
   }
 }
+function stopBtn(ui) { return ui.locator('button:visible').filter({ hasText: /^\s*(stop|stop auto\w*|cancel auto\w*)\b(?!\s*on)/i }).first(); }
+async function autoRunning(ui) { return stopBtn(ui).isVisible().catch(() => false); }
 async function autoDiag(ui) {
   await deep(ui);
   const rows = await ui.evaluate(() => {
@@ -333,10 +335,11 @@ module.exports = function startPlayer(page, shared) {
   const MAX_MS = Number(process.env.AUTO_MAX_MIN || 25) * 60e3;
   async function autoBatch(g) {
     const n = pick(ROUNDS);
+    if (await autoRunning(ui)) { log('auto: a run was still going, stopping it first'); await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(2500); }
     let onAuto = false;
     for (let t = 0; t < 3 && !onAuto; t++) {
       await clickText(ui, /^\s*auto\s*$/i); await sleep(1200);
-      onAuto = await ui.locator('button:visible').filter({ hasText: /start auto/i }).count().then(c => c > 0).catch(() => false)
+      onAuto = await autoRunning(ui) || await ui.locator('button:visible').filter({ hasText: /start auto/i }).count().then(c => c > 0).catch(() => false)
         || await deep(ui).then(() => ui.evaluate(() => window.__deepAll('label,span,div,p').some(e => (e.offsetParent || e.getClientRects().length) && e.children.length <= 2 && /^\s*(number of (bets|rounds)|on win|on loss|stop on (profit|loss))\b/i.test(e.textContent || '')))).catch(() => false);
     }
     if (!onAuto) { log('auto: Auto tab did not open, playing manual'); if (!autoDiagDone) { autoDiagDone = true; await autoDiag(ui); } await clickText(ui, /^\s*manual\s*$/i); return false; }
@@ -349,23 +352,25 @@ module.exports = function startPlayer(page, shared) {
     if (!(await zeroBet(ui))) { await clickText(ui, /^manual$/i); return false; }
     const start = ui.locator('button:visible').filter({ hasText: /^\s*(start autobet|start auto|start)\s*$/i }).first();
     if (!(await start.isVisible().catch(() => false)) || !(await start.isEnabled().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(ui, /^manual$/i); return false; }
-    let got = 0, wins = 0, best = 0;
+    let got = 0, wins = 0, best = 0, lastRes = Date.now();
     onAutoResult = res => {
-      got++; rounds++; if (res.win) wins++; if (res.mult > best) best = res.mult;
-      // the brain counts every round, but only big wins get a reaction line
+      got++; rounds++; lastRes = Date.now(); if (res.win) wins++; if (res.mult > best) best = res.mult;
       tell('round', { game: g.name, win: res.win ? 1 : 0, mult: res.mult, auto: 1 });
     };
     tell('auto', { game: g.name, n });
     log(`auto: ${n} bets on ${g.name} at 0`);
     await start.click({ timeout: 3000 });
-    const stop = ui.locator('button:visible').filter({ hasText: /^\s*(stop autobet|stop auto|stop)\s*$/i }).first();
-    const t0 = Date.now(); let why = 'done', lastQ = 0;
-    while (Date.now() - t0 < Math.min(n * 4000 + 20000, MAX_MS)) {
+    await sleep(3000);
+    const t0 = Date.now(); let why = 'done', lastQ = 0, lastLog = Date.now();
+    while (Date.now() - t0 < Math.min(n * 4000 + 30000, MAX_MS)) {
       await sleep(1000);
       const v = await readBet(ui);
-      if (v !== null && parseFloat(v || '0') !== 0) { log('auto: BET BOX NOT 0, stopping now'); why = 'safety'; break; }
+      if (v !== null && v !== '' && parseFloat(v) !== 0) { log('auto: BET BOX NOT 0, stopping now'); why = 'safety'; break; }
       if (shared.blocked) { why = 'blocked'; break; }
-      if (got >= n || !(await stop.isVisible().catch(() => false))) break;
+      if (got >= n) break;
+      // finished: no results for a while and no stop button
+      if (Date.now() - lastRes > 10e3 && !(await autoRunning(ui))) break;
+      if (Date.now() - lastLog > 60e3) { lastLog = Date.now(); log(`auto: ${got}/${n} on ${g.name}`); }
       if (Date.now() - lastQ > 10e3) {                                  // a viewer asked for a game: wrap up
         lastQ = Date.now();
         const q = await fetch(`${BRAIN}/queue/size`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null);
@@ -373,7 +378,7 @@ module.exports = function startPlayer(page, shared) {
       }
     }
     if (Date.now() - t0 >= MAX_MS) why = 'time';
-    if (await stop.isVisible().catch(() => false)) await stop.click({ timeout: 3000 }).catch(() => {});
+    for (let k = 0; k < 3 && await autoRunning(ui); k++) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(1500); }
     onAutoResult = null;
     log(`auto: ${got} bets on ${g.name}, ${wins} wins, best ${best}x (${why})`);
     tell('autoend', { game: g.name, n: got, wins, best: Math.round(best * 100) / 100, why });
@@ -406,6 +411,7 @@ module.exports = function startPlayer(page, shared) {
         if (!/\/games\//.test(page.url())) { await open(current); continue; }
 
         const g = GAMES[current];
+        if (await autoRunning(ui)) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(2000); continue; }
         if (await page.getByRole('button', { name: /^log ?in$/i }).first().isVisible().catch(() => false)) { if (++fails % 10 === 1) log('not logged in: waiting'); continue; }
         if (!(await zeroBet(ui))) {
           fails++;
