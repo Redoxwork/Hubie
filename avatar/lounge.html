@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hubie's Lounge</title>
+<style>
+  :root{ --bg:#071318; --panel:#0e1d24; --line:#1d3540; --text:#e6f4f5; --muted:#8fb0b6; --teal:#5ce1e6; --gold:#f2b544; }
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{background:radial-gradient(120% 90% at 30% 20%,#12313b 0%,#081a20 55%,#050d11 100%);color:var(--text);
+    font:22px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{position:absolute;left:4%;top:6%;width:62%}
+  h1{margin:0 0 .2em;font-size:2.6em;letter-spacing:.02em}
+  h1 span{color:var(--gold)}
+  .sub{color:var(--muted);font-size:1.1em;margin-bottom:1.4em}
+  .card{background:rgba(14,29,36,.92);border:1px solid #2b5562;border-radius:16px;padding:.9em 1.1em;margin:.8em 0}
+  .card b{color:var(--teal)}
+  .cmds{display:flex;flex-wrap:wrap;gap:.45em;margin-top:.5em}
+  .cmds i{font-style:normal;background:#12313b;border:1px solid #2b6b78;border-radius:10px;padding:.15em .55em;color:var(--teal)}
+  .fact{min-height:3.4em}
+  .clock{position:absolute;left:4%;bottom:9%;color:var(--muted);font-size:.9em}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Hubie's <span>Lounge</span></h1>
+    <div class="sub">the house games are taking a quick nap... we're back at the tables soon.</div>
+    <div class="card"><b>hang out with hubie</b> while the games wake up. talk to him in chat, he answers out loud.
+      <div class="cmds"><i>!game</i><i>!8ball</i><i>!hug</i><i>!snack</i><i>!fact</i><i>!rate</i></div></div>
+    <div class="card fact"><b>sloth fact:</b> <span id="fact"></span></div>
+    <div class="card">demo play only · no real money · 18+ · play for fun, stop when it isn't</div>
+  </div>
+  <div class="clock" id="clock"></div>
+<script>
+  const FACTS = [
+    'sloths can hold their breath for up to 40 minutes.',
+    'sloths are better swimmers than walkers.',
+    'algae grows in sloth fur, built-in camouflage.',
+    'a sloth can take weeks to digest one meal.',
+    'some sloths can turn their heads about 270 degrees. i see everything.',
+    'two-toed sloths actually have three toes on their back feet.',
+    'every dice roll is independent. no number is ever "due".',
+    'RTP is an average over millions of rounds, not one session.',
+  ];
+  let i = Math.floor(Math.random() * FACTS.length);
+  const show = () => { document.getElementById('fact').textContent = FACTS[i++ % FACTS.length]; };
+  const tick = () => { document.getElementById('clock').textContent = new Date().toUTCString().slice(17, 22) + ' UTC'; };
+  show(); tick(); setInterval(show, 45000); setInterval(tick, 20000);
+</script>
+</body>
+</html>

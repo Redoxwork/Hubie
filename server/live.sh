@@ -112,6 +112,14 @@ pusher & PUSH=$!
 keeper & KEEP=$!
 GAME_STARTED=$(date +%s)
 
+# memory per part (MB), to find anything that grows over long runs
+memuse(){
+  ps -eo rss=,args= | awk '
+    /chrome-live-game/ {g+=$1; next} /chrome-avatar/ {a+=$1; next} /tts_worker/ {t+=$1; next}
+    /brain\/main.js/ {b+=$1; next} /ffmpeg/ {f+=$1; next} /mediamtx/ {m+=$1; next}
+    END {printf "game chrome %d · avatar chrome %d · voice %d · brain %d · ffmpeg %d · relay %d", g/1024, a/1024, t/1024, b/1024, f/1024, m/1024}'
+}
+
 # ---------- watchdog ----------
 alive(){ kill -0 "$1" 2>/dev/null; }
 n=0
@@ -131,11 +139,17 @@ while :; do
   if ! alive "$REND"; then log "watchdog: renderer loop died, restarting"; renderer & REND=$!; fi
   if ! alive "$PUSH"; then log "watchdog: pusher loop died, restarting"; pusher & PUSH=$!; fi
   if ! alive "$KEEP"; then log "watchdog: keeper loop died, restarting"; keeper & KEEP=$!; fi
+  # low memory: fresh windows before anything runs out
+  if [ "$(free -m | awk '/Mem/{print $7}')" -lt 1200 ]; then
+    log "watchdog: memory low ($(memuse)), fresh windows"
+    kill "$GAME" "$AVATAR" 2>/dev/null; sleep 3; GAME=$(start_game); AVATAR=$(start_avatar); GAME_STARTED=$(date +%s)
+  fi
   # fresh game window every 3 hours (Chrome gets slow over very long runs)
   if [ $(( $(date +%s) - GAME_STARTED )) -gt 10800 ]; then
     log "watchdog: scheduled fresh game window"; kill "$GAME" 2>/dev/null; sleep 3; GAME=$(start_game); GAME_STARTED=$(date +%s)
   fi
   if [ $((n % 20)) -eq 0 ]; then
     log "health: cpu $(cut -d' ' -f1-3 /proc/loadavg) · mem free $(free -m | awk '/Mem/{print $7}') MB · disk free $(df -h "$H" | awk 'NR==2{print $4}') · $(cat "$RUN/uptime.txt")"
+    log "memory: $(memuse)"
   fi
 done

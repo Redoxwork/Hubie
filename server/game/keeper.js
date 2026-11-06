@@ -11,6 +11,22 @@ const SAFE = /^(maybe later|close|close modal|close dialog|no thanks|not now|got
 const NEVER = /deposit|withdraw|buy|purchase|cashier|bet|spin|wager|real money|claim|register|sign ?up|log ?in/i;
 let lastCheckLog = 0, lastLogin = 0, calmLogged = false;
 
+// ---- stuck security check: reload a few times, then show Hubie's Lounge and retry Housebets every 20 min ----
+const LOUNGE = 'http://127.0.0.1:8090/avatar/lounge.html';
+let blockedSince = 0, reloads = 0, lastReload = 0, loungeSince = 0;
+const tellBrain = game => fetch('http://127.0.0.1:8090/state?game=' + encodeURIComponent(game)).catch(() => {});
+async function isBlocked(page) {
+  if (page.frames().some(f => /challenges\.cloudflare|turnstile/i.test(f.url()))) return true;
+  const txt = await page.evaluate(() => (document.body?.innerText || '').slice(0, 4000)).catch(() => '');
+  return /security check (unavailable|could not load|required)|verify you are human|checking your browser|just a moment/i.test(txt);
+}
+async function goLounge(page) {
+  log('security check stuck: showing Hubie\'s Lounge, will retry Housebets in 20 min');
+  loungeSince = Date.now(); blockedSince = 0; reloads = 0;
+  await page.goto(LOUNGE, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(e => log('lounge failed', e.message));
+  tellBrain("You're in Hubie's Lounge: the Housebets games are taking a quick nap (a site check), so you're hanging out with chat. Don't claim to be spinning, winning or losing right now.");
+}
+
 // Calm mode: pause the page's animations and videos so the stream stays sharp and light (off: HUBIE_CALM=0)
 async function calm(page) {
   if (process.env.HUBIE_CALM === '0') return;
@@ -63,6 +79,15 @@ async function login(page) {
 async function tick(page) {
   const url = page.url();
   const title = await page.title().catch(() => '');
+  if (url.startsWith(LOUNGE)) {                                   // in the lounge: try Housebets again every 20 min
+    if (Date.now() - loungeSince > 20 * 60e3) {
+      log('lounge: trying Housebets again');
+      await page.goto(GAME_URL, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+      blockedSince = Date.now() - 4 * 60e3;                        // if still blocked, back to the lounge within ~1 min
+      reloads = 3;
+    }
+    return;
+  }
   if (!/housebets\.com/.test(url) || /404|not found|error/i.test(title)) {
     log('page is off (', url, title, ') -> back to', GAME_URL);
     await page.goto(GAME_URL, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('goto failed', e.message));
@@ -81,11 +106,19 @@ async function tick(page) {
   }, { safe: SAFE.source, never: NEVER.source }).catch(() => null);
   if (hit) log('closed popup:', JSON.stringify(hit));
   await calm(page);
-  const check = page.frames().some(f => /challenges\.cloudflare|turnstile/i.test(f.url()));
-  if (check) {
+  if (await isBlocked(page)) {                                     // never click it; reload, then the lounge
+    if (!blockedSince) blockedSince = Date.now();
     if (Date.now() - lastCheckLog > 10 * 60e3) { lastCheckLog = Date.now(); log('security check is showing (waiting on Housebets)'); }
-    return;                                                    // never touch it, and don't try to log in behind it
+    const stuck = Date.now() - blockedSince;
+    if (reloads >= 3 && stuck > 5 * 60e3) return goLounge(page);
+    if (stuck > 60e3 && Date.now() - lastReload > 2 * 60e3) {
+      reloads++; lastReload = Date.now(); log(`security check stuck: reload ${reloads}/3`);
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+    }
+    return;
   }
+  if (blockedSince || loungeSince) { log('Housebets is back'); tellBrain(''); }
+  blockedSince = 0; reloads = 0; loungeSince = 0;
   if (process.env.AUTO_LOGIN === '1' && await visibleLogin(page)) await login(page);   // off until Housebets fixes demo/security check
 }
 
@@ -101,6 +134,6 @@ async function tick(page) {
   for (;;) {
     const page = browser.contexts()[0]?.pages().find(p => !p.url().startsWith('devtools')) || null;
     if (page) await tick(page).catch(e => log('tick error', e.message));
-    await new Promise(r => setTimeout(r, 30000));
+    await new Promise(r => setTimeout(r, 20000));
   }
 })();
