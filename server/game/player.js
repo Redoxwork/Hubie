@@ -444,7 +444,7 @@ async function playBlackjack(ui, tell) {
 }
 
 // ---- round results: read from the game's own network replies (logged once so we can tune) ----
-let lastJson = null, keysLogged = 0, onAutoResult = null;
+let lastJson = null, keysLogged = 0, onAutoResult = null; const errLog = {};
 function findResult(o) {
   let mult = null, win = null;
   (function walk(x, d) {
@@ -491,6 +491,10 @@ function sniff(page) {
       const j = await r.json();
       if (/live-?feed|live-?bets|recent-?bets|high-?rollers|lucky-?wins/i.test(r.url())) { onFeed(j); return; }
       if (/fairness|paytable|config|settings|rules|history|seed|stats|leaderboard|limits|currencies/i.test(r.url())) return;
+      if (j && (j.error || (j.code && j.code !== 200 && j.code !== 'ok' && j.code !== 0)) && /games\.housebets/.test(r.url())) {
+        const k = r.url().split('?')[0].split('/').slice(-2).join('/'); errLog[k] = errLog[k] || { n: 0, at: 0 };
+        if (errLog[k].n++ < 3 || Date.now() - errLog[k].at > 10 * 60e3) { errLog[k].at = Date.now(); log('game server said no on', k, '->', JSON.stringify({ code: j.code, error: j.error, message: j.message }).slice(0, 200)); }
+      }
       const res = findResult(j);
       if (res) { lastJson = { at: Date.now(), ...res }; if (onAutoResult) onAutoResult(res); if (keysLogged < 3) { keysLogged++; log('result keys from', r.url().split('?')[0].slice(-40), Object.keys(j).slice(0, 12).join(',')); } }
     } catch {}
@@ -503,7 +507,7 @@ module.exports = function startPlayer(page, shared) {
   shared.playing = true;
   sniff(page);
   feedTell = (t, q) => fetch(`${BRAIN}/event?type=${t}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
-  let waitTries = 0, openTries = 0, autoDiagDone = false, openedAt = Date.now(), justRan = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
+  let stuckReloads = {}, waitTries = 0, openTries = 0, autoDiagDone = false, openedAt = Date.now(), justRan = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
   const tellRaw = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const tell = (type, q) => { if (type === 'round') shared.lastRound = Date.now(); return tellRaw(type, q); };
   const slots = require('./slots')({ page, shared, base: BASE, tell });
@@ -660,7 +664,11 @@ module.exports = function startPlayer(page, shared) {
         if (g.bj && (await anyVisible(ui, /^\s*(hit|stand)\s*$/i)) && !(await playButton(ui, g.button))) { log('finishing a blackjack hand'); await playBlackjack(ui, tell); continue; }
         if (g.steps && g.steps.cash && typeof g.steps.step !== 'string' && (await anyVisible(ui, g.steps.cash)) && !(await playButton(ui, g.button))) {   // a round left open: one step, then cash out
           openTries = (openTries || 0) + 1; log('finishing an open round on', g.name, `(try ${openTries})`);
-          if (openTries > 3) { log('open round stuck: reloading the game'); openTries = 0; await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); continue; }
+          if (openTries > 3) {
+            openTries = 0; stuckReloads[current] = (stuckReloads[current] || 0) + 1;
+            if (stuckReloads[current] > 2) { log('open round still stuck on', g.name, 'after 2 reloads: moving on'); stuckReloads[current] = 0; bench(current, 'stuck round'); await open(nextGame()); continue; }
+            log('open round stuck: reloading the game'); await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); continue;
+          }
           await runSteps(ui, g.steps, 1); continue;
         }
         if (await page.getByRole('button', { name: /^log ?in$/i }).first().isVisible().catch(() => false)) { if (++fails % 10 === 1) log('not logged in: waiting'); continue; }
@@ -687,7 +695,11 @@ module.exports = function startPlayer(page, shared) {
         if (!b) { if (await anyVisible(ui, /^\s*(hit|stand|cash ?out|random( tile| pick)?|higher|lower|waiting|starting)\b/i)) {
             waitTries++;
             if (g.steps && g.steps.step === 'safer' && waitTries <= 3) { await runSteps(ui, g.steps, 1); continue; }   // Hilo round left open
-            if (waitTries > 12) { log('round stuck on', g.name, ': reloading'); waitTries = 0; await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); }
+            if (waitTries > 12) {
+              waitTries = 0; stuckReloads[current] = (stuckReloads[current] || 0) + 1;
+              if (stuckReloads[current] > 2) { log('round still stuck on', g.name, 'after 2 reloads: moving on'); stuckReloads[current] = 0; bench(current, 'stuck round'); await open(nextGame()); continue; }
+              log('round stuck on', g.name, ': reloading'); await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page);
+            }
             await sleep(2000); continue; }
           if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
@@ -701,7 +713,7 @@ module.exports = function startPlayer(page, shared) {
           else if (r.survived === false) level[current] = Math.max(st.min, level[current] - 1);
           if (r.survived && r.done > (bestLevel[current] || 0)) { bestLevel[current] = r.done; if (r.done >= 3) tell('steps', { game: g.name, steps: r.done }); }
         }
-        fails = 0; rounds++; openTries = 0; waitTries = 0;
+        fails = 0; rounds++; openTries = 0; waitTries = 0; stuckReloads[current] = 0;
         await sleep(2500);
         const res = lastJson && lastJson.at >= t0 ? lastJson : null;
         tell('round', { game: g.name, win: res ? (res.win ? 1 : 0) : '', mult: res ? res.mult : '' });
