@@ -217,7 +217,7 @@ module.exports = function slots({ page, shared, base, tell }) {
       await sleep(rand(2000, 4000));
     }
     log(`done with ${name} (${spins} spins, ${wins} wins, best ${best.toFixed(1)}x)`);
-    if (spins) tell('autoend', { game: name, n: spins, wins, best: Math.round(best * 100) / 100, why: shared.blocked ? 'blocked' : 'done' });
+    if (spins) tell('autoend', { slot: 1, game: name, n: spins, wins, best: Math.round(best * 100) / 100, why: shared.blocked ? 'blocked' : 'done' });
     return true;
   }
   // bonus buy by the words on the buttons (works in any layout): BUY BONUS -> cheapest BUY -> OK
