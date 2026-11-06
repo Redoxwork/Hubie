@@ -69,31 +69,35 @@ async function zeroBet(ui) {
   const read = () => ui.evaluate(() => {
     const vis = e => !!(e.offsetParent || e.getClientRects().length);
     document.querySelectorAll('[data-hubie-bet]').forEach(e => e.removeAttribute('data-hubie-bet'));
-    const ok = x => vis(x) && !/checkbox|radio|range|hidden/i.test(x.type);
-    let inp = null;
-    // 1) a label whose own text is "Bet Amount" -> the nearest input below it
-    for (const el of document.querySelectorAll('label,span,div,p,h1,h2,h3,h4,h5,h6')) {
-      if (el.children.length > 3) continue;
-      if (!/^\s*(bet amount|bet|amount|chip value)\s*$/i.test(el.textContent || '')) continue;
-      let p = el;
-      for (let i = 0; i < 5 && p && !inp; i++, p = p.parentElement) inp = [...p.querySelectorAll('input')].find(ok) || null;
-      if (inp) break;
+    const EDIT = 'input, textarea, [contenteditable="true"], [contenteditable=""], [role=spinbutton], [role=textbox]';
+    const ok = x => vis(x) && !/checkbox|radio|range|hidden/i.test(x.type || '');
+    const own = el => [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').trim();
+    // the label: an element whose OWN text (or whole short text) is "Bet Amount"
+    const labels = [...document.querySelectorAll('body *')].filter(el => vis(el) && el.children.length <= 4 &&
+      (/^(bet amount|chip value)\b/i.test(own(el)) || /^\s*(bet amount|chip value)\s*$/i.test(el.textContent || '')));
+    for (const lab of labels) {
+      let p = lab;
+      for (let i = 0; i < 6 && p; i++, p = p.parentElement) {
+        const ed = [...p.querySelectorAll(EDIT)].find(ok);
+        if (ed) { ed.setAttribute('data-hubie-bet', '1'); return { v: ed.value !== undefined && ed.tagName !== 'DIV' ? ed.value : ed.textContent, edit: true }; }
+        // no editable box: read the amount shown next to the label (first number after it)
+        const txt = (p.innerText || '').replace(/,/g, '');
+        const m = /bet amount[^\d]{0,40}?(\d+(?:\.\d+)?)/i.exec(txt);
+        if (m && i >= 1) return { v: m[1], edit: false };
+      }
     }
-    // 2) fallback: first input inside a box that mentions bet amount
-    if (!inp) for (const x of document.querySelectorAll('input')) {
-      if (!ok(x)) continue;
-      let p = x; for (let i = 0; i < 5 && p; i++, p = p.parentElement) if (/bet amount|chip value/i.test(p.innerText || '')) { inp = x; break; }
-      if (inp) break;
-    }
-    if (!inp) return null;
-    inp.setAttribute('data-hubie-bet', '1');
-    return inp.value;
+    return null;
   }).catch(() => null);
-  let v = await read();
-  if (v === null) return false;
-  const num = x => parseFloat(String(x || '0').replace(',', '.'));
-  if (num(v) !== 0) { await ui.locator('[data-hubie-bet="1"]').first().fill('0', { timeout: 3000 }).catch(() => {}); await sleep(300); v = await read(); }
-  return v !== null && num(v) === 0;
+  const num = x => parseFloat(String(x || '0').replace(',', '.').replace(/[^\d.]/g, '') || '0');
+  let r = await read();
+  if (!r) return false;
+  if (num(r.v) !== 0) {
+    if (!r.edit) return false;                                          // shows a real amount and we can't change it: never bet
+    const el = ui.locator('[data-hubie-bet="1"]').first();
+    await el.fill('0', { timeout: 3000 }).catch(async () => { await el.click({ timeout: 2000 }).catch(() => {}); await el.press('Control+A').catch(() => {}); await el.type('0').catch(() => {}); });
+    await sleep(300); r = await read();
+  }
+  return !!r && num(r.v) === 0;
 }
 // which frame holds the game controls (main page or an embedded game)
 async function findUI(page) {
@@ -107,11 +111,15 @@ async function findUI(page) {
 // one-time dump when the bet box can't be found, so it can be fixed from the log
 async function diag(page) {
   for (const f of page.frames()) {
-    const info = await f.evaluate(() => [...document.querySelectorAll('input')].slice(0, 8).map(x => {
-      const p = x.parentElement && x.parentElement.parentElement;
-      return `${x.type}|${x.name || ''}|${x.placeholder || ''}|v=${x.value}|vis=${!!(x.offsetParent || x.getClientRects().length)}|near=${((p && p.innerText) || '').replace(/\s+/g, ' ').slice(0, 40)}`;
-    })).catch(e => ['err ' + e.message]);
-    log('diag frame', f.url().slice(0, 70), info.length ? '\n   ' + info.join('\n   ') : '(no inputs)');
+    if (/about:blank|challenges\.cloudflare/.test(f.url())) continue;
+    const info = await f.evaluate(() => {
+      const vis = e => !!(e.offsetParent || e.getClientRects().length);
+      const vin = [...document.querySelectorAll('input')].filter(vis).slice(0, 6).map(x => `${x.type}|${x.name || ''}|${x.placeholder || ''}|v=${x.value}`);
+      const lab = [...document.querySelectorAll('body *')].find(el => el.children.length <= 4 && /bet amount/i.test(el.textContent || '') && (el.textContent || '').length < 40);
+      let p = lab; for (let i = 0; i < 3 && p && p.parentElement; i++) p = p.parentElement;
+      return { vin, html: p ? p.outerHTML.replace(/\s+/g, ' ').replace(/ class="[^"]*"/g, '').slice(0, 700) : '(no Bet Amount label)' };
+    }).catch(e => ({ vin: [], html: 'err ' + e.message }));
+    log('diag', f.url().slice(0, 60), '\n   visible inputs:', info.vin.join(' ; ') || 'none', '\n   html:', info.html);
   }
 }
 async function pickTiles(ui, n) {
