@@ -132,7 +132,14 @@ async function openGame(page, url, label) {
 
 (async () => {
   note('Hubie login/demo test', new Date().toISOString());
+  let proxy;
+  if (process.env.HUBIE_PROXY) {
+    const u = new URL(process.env.HUBIE_PROXY.includes('://') ? process.env.HUBIE_PROXY : 'http://' + process.env.HUBIE_PROXY);
+    proxy = { server: `${u.protocol}//${u.host}`, username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) };
+    note('using proxy', u.host);
+  }
   const ctx = await chromium.launchPersistentContext(PROFILE, {
+    proxy,
     executablePath: '/usr/bin/google-chrome',
     headless: false,
     viewport: { width: 1280, height: 720 },

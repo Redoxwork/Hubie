@@ -41,9 +41,18 @@ CH=(google-chrome --no-sandbox --test-type --no-first-run --no-default-browser-c
     --disable-features=Translate,CalculateNativeWinOcclusion --autoplay-policy=no-user-gesture-required
     --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows
     --force-device-scale-factor=1 --window-position=0,0 --window-size=1280,720 --kiosk --remote-allow-origins=*)
+# optional residential proxy for the game window only (set HUBIE_PROXY with: hubie proxy)
+GPROXY=()
+[ -n "${HUBIE_PROXY:-}" ] && GPROXY=(--proxy-server=http://127.0.0.1:8899 --proxy-bypass-list="<-loopback>" --force-webrtc-ip-handling-policy=disable_non_proxied_udp)
+relay_proxy(){
+  while :; do
+    (cd "$H/server" && node proxy.js) 2>&1
+    log "proxy relay stopped, restarting"; sleep 3
+  done
+}
 start_game(){
   # the profile is kept between restarts so the Housebets login + cookies survive
-  DISPLAY=:99 nice -n 5 "${CH[@]}" --force-prefers-reduced-motion --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
+  DISPLAY=:99 nice -n 5 "${CH[@]}" "${GPROXY[@]}" --force-prefers-reduced-motion --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
 }
 brain_up(){ curl -fs --max-time 3 http://127.0.0.1:8090/health >/dev/null; }
 start_avatar(){
@@ -104,6 +113,7 @@ keeper(){
 # ---------- start ----------
 log "starting Hubie LIVE"
 X99=$(start_xvfb 99); X98=$(start_xvfb 98); sleep 2
+if [ -n "${HUBIE_PROXY:-}" ]; then relay_proxy & sleep 2; log "game window goes through the residential proxy"; fi
 GAME=$(start_game); AVATAR=$(start_avatar); sleep 8
 RELAYP=$(start_relay)
 renderer & REND=$!

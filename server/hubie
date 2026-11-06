@@ -56,6 +56,29 @@ case "${1:-help}" in
     pkill -f stream_test.sh; pkill -f live.sh; pkill -f ffmpeg; pkill -f mediamtx; pkill -f google-chrome; pkill -f Xvfb; pkill -f keeper.js; sleep 1
     pgrep -f ffmpeg >/dev/null && echo "something is still running, try again" || echo "stopped (Kick can take a minute to show offline)" ;;
 
+  proxy)   # hubie proxy <http://user:pass@host:port> | off | test
+    setkey(){ grep -v "^$1=" "$ENVF" > "$ENVF.tmp" || true; [ -n "$2" ] && printf '%s=%q\n' "$1" "$2" >> "$ENVF.tmp"; mv "$ENVF.tmp" "$ENVF"; chown root:hubie "$ENVF"; chmod 640 "$ENVF"; }
+    case "${2:-test}" in
+      off) setkey HUBIE_PROXY ""; echo "Proxy removed. Run 'hubie live' to use it." ;;
+      test) ;;
+      *) setkey HUBIE_PROXY "$2"; echo "Proxy saved." ;;
+    esac
+    set -a; . "$ENVF"; set +a
+    [ -z "${HUBIE_PROXY:-}" ] && { echo "No proxy set. Use: hubie proxy http://user:pass@host:port"; exit 0; }
+    p="$HUBIE_PROXY"; case "$p" in *://*) ;; *) p="http://$p" ;; esac
+    echo "Server IP:  $(curl -s --max-time 10 https://api.ipify.org)"
+    echo "Proxy IP:   $(curl -s --max-time 20 -x "$p" https://api.ipify.org || echo FAILED)"
+    echo "Proxy place: $(curl -s --max-time 20 -x "$p" https://ipinfo.io/json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("city"), d.get("country"), "-", d.get("org"))' 2>/dev/null || echo unknown)"
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 -x "$p" -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' https://www.housebets.com/)
+    echo "Housebets via proxy: HTTP $code"
+    echo "Next: hubie test-login   (then hubie shots to see if the security check is gone)" ;;
+
+  games)   # hubie games on|off  (originals + slots bot)
+    v=0; [ "${2:-}" = on ] && v=1
+    for k in GAMES SLOTS; do grep -v "^$k=" "$ENVF" > "$ENVF.tmp" || true; echo "$k=$v" >> "$ENVF.tmp"; mv "$ENVF.tmp" "$ENVF"; done
+    chown root:hubie "$ENVF"; chmod 640 "$ENVF"; systemctl restart hubie-brain 2>/dev/null || true
+    echo "Games $( [ $v = 1 ] && echo ON || echo OFF ). Run 'hubie live' to restart the stream with it." ;;
+
   shots)
     bash "$H/server/shots.sh" ;;
 
@@ -100,5 +123,5 @@ case "${1:-help}" in
     curl -fs -G http://127.0.0.1:8090/test/follow --data-urlencode "name=${2:-tester}" && echo " sent" ;;
 
   *)
-    echo "hubie live | stop [all] | secrets | voices | laughs | laugh-clips <urls> | laugh-keep <names> | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
+    echo "hubie live | stop [all] | secrets | proxy <url>|off|test | games on|off | voices | laughs | laugh-clips <urls> | laugh-keep <names> | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
 esac
