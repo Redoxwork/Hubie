@@ -79,7 +79,21 @@ async function findLogin(page) {
   return null;
 }
 
+// wait while Cloudflare's "Just a moment..." check is on screen (it clears itself on a good IP)
+async function pastCheck(page, max = 60000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < max) {
+    const title = await page.title().catch(() => '');
+    const cf = page.frames().some(f => /challenges\.cloudflare|turnstile/i.test(f.url()));
+    if (!/just a moment|security check|attention required/i.test(title) && !cf) { note(`check: passed after ${Math.round((Date.now() - t0) / 1000)} s`); return true; }
+    await page.waitForTimeout(2000);
+  }
+  note('check: ⚠️ still on the security check after', max / 1000, 's'); await shot(page, 'stuck-on-check'); return false;
+}
+
 async function login(page) {
+  await pastCheck(page);
+  await page.waitForTimeout(3000);
   let btn = await findLogin(page);
   if (!btn) { note('LOGIN: no Log In button visible, so treating as already logged in (saved session)'); return true; }
   note('LOGIN: logged out, Log In button found');
