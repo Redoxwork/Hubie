@@ -67,7 +67,8 @@ case "${1:-help}" in
     "$H/tts/venv/bin/python" "$H/server/tts_samples.py" laughs "$H/tts" "$out" && chown -R hubie:hubie "$out" && bash "$H/server/shots.sh" ;;
 
   laugh-clips)   # hubie laugh-clips <sound page url> ... : fetch, cut, preview
-    shift; runuser -u hubie -- env HUBIE_DIR="$H" node "$H/server/laughs.js" "$@" && systemctl restart hubie-brain && bash "$H/server/shots.sh" ;;
+    shift; mkdir -p "$H/tts/laughs/raw"; chown -R hubie:hubie "$H/tts/laughs"
+    runuser -u hubie -- env HUBIE_DIR="$H" node "$H/server/laughs.js" "$@" && systemctl restart hubie-brain && bash "$H/server/shots.sh" ;;
 
   laugh-keep)    # hubie laugh-keep laugh1 chuckle3 : keep only these clips
     shift; cd "$H/tts/laughs" && for f in *.mp3; do keep=0; for k in "$@"; do [ "${f%.mp3}" = "$k" ] && keep=1; done; [ $keep = 1 ] || rm -f "$f"; done; ls *.mp3; systemctl restart hubie-brain ;;

@@ -8,7 +8,9 @@ const H = process.env.HUBIE_DIR || '/opt/hubie';
 const OUT = path.join(H, 'tts/laughs'), RAW = path.join(OUT, 'raw');
 const PREVIEW = path.join(H, 'shots', 'laugh-clips-' + new Date().toISOString().slice(5, 16).replace(/[-:T]/g, ''));
 fs.mkdirSync(RAW, { recursive: true }); fs.mkdirSync(PREVIEW, { recursive: true });
-const urls = process.argv.slice(2).filter(u => /^https?:\/\//.test(u));
+const urls = process.argv.slice(2).filter(u => /^https?:\/\//.test(u) || fs.existsSync(u));
+// with no arguments: use every sound file uploaded to tts/laughs/raw
+if (!urls.length) for (const f of fs.existsSync(RAW) ? fs.readdirSync(RAW) : []) if (/\.(mp3|wav|ogg|m4a)$/i.test(f)) urls.push(path.join(RAW, f));
 if (!urls.length) { console.log('usage: hubie laugh-clips <sound page url> ...'); process.exit(1); }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -56,7 +58,7 @@ function cut(src, name, max) {
   const made = [];
   for (let i = 0; i < urls.length; i++) {
     console.log('fetching', urls[i]);
-    const src = await grab(browser, urls[i], i + 1);
+    const src = fs.existsSync(urls[i]) ? urls[i] : await grab(browser, urls[i], i + 1);
     if (!src) continue;
     try { made.push(cut(src, `laugh${i + 1}`, 2.5), cut(src, `chuckle${i + 1}`, 1.2)); } catch (e) { console.log('  cut failed:', e.message.split('\n')[0]); }
   }
