@@ -82,6 +82,28 @@ async function clickText(ui, re) {
   }
   return false;
 }
+// fast mode: switch on a game's Turbo / Instant / Quick spin toggle if it has one (only once per game: the
+// game remembers it, so clicking again later could switch it back off)
+const turboDone = {};
+async function turbo(ui, g) {
+  if (process.env.TURBO === '0' || turboDone[g.name]) return; turboDone[g.name] = true;
+  try {
+    const r = await deep(ui).then(() => ui.evaluate(() => {
+      const re = /^\s*(turbo( mode| spin)?|instant( bet| mode)?|quick ?spin|fast( mode| play| spin)?)\s*$/i;
+      const vis = e => e && (e.offsetParent || e.getClientRects().length);
+      const lab = window.__deepAll('label,span,div,p,button').find(e => vis(e) && e.children.length <= 3 && re.test(e.textContent || '') && !/bet amount|stop/i.test(e.textContent));
+      if (!lab) return 'none';
+      const box = lab.closest('label,[role=switch],button') || lab.parentElement;
+      const sw = box.querySelector('[role=switch],input[type=checkbox],[aria-checked],[aria-pressed]') || (box.matches('[role=switch],[aria-checked],[aria-pressed]') ? box : null);
+      const on = sw && (sw.checked === true || sw.getAttribute('aria-checked') === 'true' || sw.getAttribute('aria-pressed') === 'true' || /\b(on|active|checked)\b/i.test(sw.className || ''));
+      if (on) return 'already on';
+      (sw || box).setAttribute('data-hubie-turbo', '1'); return 'off';
+    }));
+    if (r === 'off') { await ui.locator('[data-hubie-turbo="1"]').first().click({ timeout: 2000 }); log(`auto: turbo/instant mode on for ${g.name}`); await new Promise(r => setTimeout(r, 600)); }
+    else if (r === 'already on') log(`auto: turbo already on for ${g.name}`);
+  } catch {}
+}
+
 async function clickAny(ui, re) {
   const all = ui.getByText(re);
   const n = Math.min(await all.count().catch(() => 0), 10);
@@ -644,6 +666,7 @@ module.exports = function startPlayer(page, shared) {
     if (!set && !autoDiagDone) { autoDiagDone = true; await autoDiag(ui); }
     if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(ui, /^manual$/i); return false; }
     if (!(await zeroBet(ui))) { await clickText(ui, /^manual$/i); return false; }
+    await turbo(ui, g);
     const start = ui.locator('button:visible').filter({ hasText: /^\s*(start autobet|start auto|start)\s*$/i }).first();
     if (!(await start.isVisible().catch(() => false)) || !(await start.isEnabled().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(ui, /^manual$/i); return false; }
     let got = 0, wins = 0, best = 0, lastRes = Date.now();
@@ -779,3 +802,4 @@ module.exports = function startPlayer(page, shared) {
 };
 module.exports.GAMES = GAMES;
 module.exports.resolve = resolve;
+module.exports.turbo = turbo;
