@@ -291,22 +291,27 @@ async function playButton(page, re) {
   return null;
 }
 
-// set a number box by its label (smallest container wins), never the Bet Amount box
+// set a number box OR dropdown by its label (smallest container wins), never the Bet Amount box
 async function setByLabel(ui, labelRe, value) {
   await deep(ui);
-  const ok = await ui.evaluate(({ src }) => {
+  const kind = await ui.evaluate(({ src }) => {
     const D = window.__deepAll, up = window.__up, T = window.__text;
     const re = new RegExp(src, 'i'); let best = null, bestDepth = 99;
-    for (const inp of D('input')) {
+    for (const inp of D('input, select')) {
       if (!(inp.offsetParent || inp.getClientRects().length) || inp.hasAttribute('data-hubie-bet') || /checkbox|radio|range|hidden/i.test(inp.type)) continue;
       let p = inp; for (let d = 0; d < 5 && p; d++, p = up(p)) if (re.test(T(p))) { if (d < bestDepth) { best = inp; bestDepth = d; } break; }
     }
     D('[data-hubie-n]').forEach(e => e.removeAttribute('data-hubie-n'));
-    if (best) best.setAttribute('data-hubie-n', '1');
-    return !!best;
-  }, { src: labelRe.source }).catch(() => false);
-  if (!ok) return null;
+    if (!best) return null;
+    best.setAttribute('data-hubie-n', '1');
+    return best.tagName === 'SELECT' ? 'select' : 'input';
+  }, { src: labelRe.source }).catch(() => null);
+  if (!kind) return null;
   const el = ui.locator('[data-hubie-n="1"]').first();
+  if (kind === 'select') {
+    await el.selectOption({ label: String(value) }, { timeout: 3000 }).catch(() => el.selectOption(String(value), { timeout: 3000 }).catch(() => {}));
+    return el.evaluate(e => e.options[e.selectedIndex] ? e.options[e.selectedIndex].text.trim() : null).catch(() => null);
+  }
   await el.fill(String(value), { timeout: 3000 }).catch(() => {});
   return el.inputValue().catch(() => null);
 }

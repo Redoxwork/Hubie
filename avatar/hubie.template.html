@@ -487,6 +487,7 @@ const RIG = __RIG__;
   function fit(){ cel.width = innerWidth; cel.height = innerHeight; } fit(); addEventListener('resize', fit);
   function celebrate(x, game){
     const n = x >= 1000 ? 260 : x >= 250 ? 180 : 110, Wd = cel.width;
+    if (rain.length > 300) rain.splice(0, rain.length - 300);              // back-to-back wins never pile up
     for (let i=0;i<n;i++) rain.push({ x:Math.random()*Wd, y:-20-Math.random()*cel.height*.9, vx:(Math.random()-.5)*2.2, vy:2+Math.random()*4,
       r:(x>=250?9:7)+Math.random()*(x>=250?14:10), spin:Math.random()*6, sp:.08+Math.random()*.14, kind:Math.random()<.78?'coin':'spark', life:1 });
     wb.innerHTML = `${(Math.round(x*100)/100).toLocaleString('en-US')}x!<small>${esc(game||'')}</small>`;
