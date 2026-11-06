@@ -73,6 +73,9 @@ case "${1:-help}" in
     echo "Housebets via proxy: HTTP $code"
     echo "Next: hubie test-login   (then hubie shots to see if the security check is gone)" ;;
 
+  archive)   # list the saved 480p hours of the run
+    ls -lh /opt/hubie/archive 2>/dev/null | tail -n +2 | awk '{print $5, $9}'; echo; du -sh /opt/hubie/archive /opt/hubie/recordings 2>/dev/null; df -h /opt/hubie | tail -1 ;;
+
   report)   # how the run is going since the last 'hubie live'
     bash "$H/server/report.sh" ;;
 
@@ -129,5 +132,5 @@ case "${1:-help}" in
     curl -fs -G http://127.0.0.1:8090/test/follow --data-urlencode "name=${2:-tester}" && echo " sent" ;;
 
   *)
-    echo "hubie live | report | stop [all] | secrets | proxy <url>|off|test | login-view [stop] | games on|off | voices | laughs | laugh-clips <urls> | laugh-keep <names> | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
+    echo "hubie live | report | archive | stop [all] | secrets | proxy <url>|off|test | login-view [stop] | games on|off | voices | laughs | laugh-clips <urls> | laugh-keep <names> | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
 esac

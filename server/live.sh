@@ -103,6 +103,9 @@ pusher(){
     log "pusher: Kick connection ended (code ${PIPESTATUS[0]}), reconnecting"; sleep 2
   done
 }
+archiver(){
+  while :; do sleep 900; bash "$H/server/archive.sh" 2>&1; done   # every 15 min: archive finished hours
+}
 keeper(){
   while :; do
     (cd "$H/server" && node game/keeper.js) 2>&1
@@ -120,6 +123,7 @@ renderer & REND=$!
 sleep 4
 pusher & PUSH=$!
 keeper & KEEP=$!
+archiver & ARCH=$!
 GAME_STARTED=$(date +%s)
 
 # memory per part (MB), to find anything that grows over long runs
@@ -149,10 +153,14 @@ while :; do
   if ! alive "$REND"; then log "watchdog: renderer loop died, restarting"; renderer & REND=$!; fi
   if ! alive "$PUSH"; then log "watchdog: pusher loop died, restarting"; pusher & PUSH=$!; fi
   if ! alive "$KEEP"; then log "watchdog: keeper loop died, restarting"; keeper & KEEP=$!; fi
+  if ! alive "$ARCH"; then archiver & ARCH=$!; fi
   # low memory: fresh windows before anything runs out
   if [ "$(free -m | awk '/Mem/{print $7}')" -lt 1200 ]; then
     log "watchdog: memory low ($(memuse)), fresh windows"
     kill "$GAME" "$AVATAR" 2>/dev/null; sleep 3; GAME=$(start_game); AVATAR=$(start_avatar); GAME_STARTED=$(date +%s)
+  fi
+  if [ "$(df -BG --output=avail "$H" | tail -1 | tr -dc 0-9)" -lt 15 ]; then
+    old=$(ls -1tr "$H"/recordings/hubie/*.mp4 2>/dev/null | head -3); [ -n "$old" ] && { log "watchdog: disk low, removing oldest full recordings"; rm -f $old; }
   fi
   # fresh game window every 3 hours (Chrome gets slow over very long runs)
   if [ $(( $(date +%s) - GAME_STARTED )) -gt 10800 ]; then
