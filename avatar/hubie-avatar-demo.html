@@ -46,8 +46,8 @@
     border-radius:14px;padding:.6em .8em;font-size:clamp(10px,1.3vw,24px);color:#e6f4f5}
   .gamebox.on{display:block}
   /* on-stream chat, under Hubie's cam */
-  .chatbox{position:absolute;right:2%;bottom:9%;width:min(22vw,36vh);z-index:3;display:flex;flex-direction:column;gap:.3em;
-    font-size:clamp(10px,1.02vw,20px);line-height:1.25;max-height:40vh;overflow:hidden;justify-content:flex-end}
+  .chatbox{position:relative;margin-top:.45em;width:100%;display:flex;flex-direction:column;gap:.3em;
+    font-size:clamp(10px,1.02vw,20px);line-height:1.25;max-height:36vh;overflow:hidden;justify-content:flex-start}
   .chatbox .m{background:#09161c;border:1px solid #1d3540;border-radius:9px;padding:.32em .55em;color:var(--text);
     animation:chatIn .25s ease-out;overflow-wrap:anywhere}
   .chatbox .m b{color:var(--teal);margin-right:.35em}
@@ -98,7 +98,7 @@
     background:rgba(0,0,0,.55);border-radius:8px;padding:.2em .55em;font-weight:700;font-size:clamp(7px,3.6cqw,22px);letter-spacing:.04em}
   body.mode-cam .tag i{width:.55em;height:.55em;border-radius:50%;background:#ff4d4d;box-shadow:0 0 8px #ff4d4d}
   body.mode-cam .caption{margin-top:.5em}
-  body.overlay.mode-cam .caption, body.overlay.mode-cam .replyto{width:150%;margin-left:-50%}
+  body.overlay.mode-cam .caption, body.overlay.mode-cam .replyto, body.overlay.mode-cam .chatbox{width:150%;margin-left:-50%}
   body.mode-cam .game{width:58%;height:80%;left:3%;top:5%}
 
   .panel{max-width:1280px;margin:0 auto;padding:14px 16px 40px}
@@ -128,10 +128,10 @@
     </div>
     <div class="replyto" id="replyto"><b id="rtName"></b><span id="rtText"></span></div>
     <div class="caption" id="caption"><span class="who">hubie</span><span id="capText"></span></div>
+    <div class="chatbox" id="chatbox"></div>
   </div>
   <div class="gamebox" id="gamebox"></div>
   <div class="statbar" id="statbar"></div>
-  <div class="chatbox" id="chatbox"></div>
   <canvas id="celebrate"></canvas>
   <div class="winbanner" id="winbanner"></div>
   <div class="banner"><span><b>18+</b> only</span><span>Demo play, no real money</span><span>Please gamble responsibly</span></div>
@@ -514,12 +514,9 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
     const d = document.createElement('div'); d.className = 'm' + (me ? ' me' : '');
     d.innerHTML = `<b>${esc(who)}</b>${esc(text)}`;
     chatEl.appendChild(d);
-    while (chatEl.children.length > 7) chatEl.removeChild(chatEl.firstChild);
+    while (chatEl.children.length > 6) chatEl.removeChild(chatEl.firstChild);
     setTimeout(()=>{ d.classList.add('out'); setTimeout(()=>d.remove(), 900); }, me ? 30000 : 45000);
   }
-  // keep the chat above the chat-game panel when it's open
-  setInterval(()=>{ const g = document.getElementById('gamebox'); chatEl.style.bottom = g.classList.contains('on') ? `calc(9% + ${g.offsetHeight + 10}px)` : '9%';
-    chatEl.style.maxHeight = g.classList.contains('on') ? '22vh' : '40vh'; }, 500);
   function connect(url){
     let ws; try { ws = new WebSocket(url); } catch(e){ return; }
     ws.onopen = () => { sock = ws; tell({type:'hello'}); };

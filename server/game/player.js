@@ -25,7 +25,7 @@ const GAMES = {
               prep: page => kenoPick(page) },
   maxwin:   { name: 'Max Win',  slugs: ['max-win', 'maxwin', 'max-win-machine'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
   crash:    { name: 'Crash',    slugs: ['crash'], button: /^\s*(bet|place bet|bet \(next round\)|join)\s*$/i, weight: 2, crash: true,
-              prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out/i, pick(['1.5', '2', '3', '5', '10', '10', '25', '50', '100'])) },
+              prep: page => chalNow().game === 'crash' ? null : setByLabel(page, /cash ?out at|auto ?cash ?out/i, pick(['1.5', '2', '3', '5', '10', '10', '25', '50', '100'])) },
   // games with steps inside a round: start, take a few steps, cash out
   road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'hubie-road', 'road'], button: /^(bet|play|start)$/i, weight: 3,
               steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 3, max: 7, cap: 14, cash: /^cash ?out/i } },
@@ -318,7 +318,7 @@ async function setByLabel(ui, labelRe, value) {
 const readBet = page => page.locator('[data-hubie-bet="1"]').first().inputValue().catch(() => null);
 
 // games with steps inside a round (Road, Tower, Mines, Hilo, Blackjack)
-let boardBroken = false;
+let boardBroken = false; let chalNow = () => ({});
 async function waitBtn(ui, re, ms) { const t0 = Date.now(); for (;;) { const b = await playButton(ui, re); if (b || Date.now() - t0 > ms) return b; await sleep(400); } }
 const anyVisible = (ui, re) => ui.locator('button:visible').filter({ hasText: re }).count().then(c => c > 0).catch(() => false);
 async function runSteps(page, st, n) {
@@ -531,17 +531,22 @@ module.exports = function startPlayer(page, shared) {
       if (got !== null) tell('setting', { game: g.name, risk: `${n} mines`, by: pref.by || '' });
     }
   }
-  let chal = { game: 'limbo', target: 10 }, chalAt = 0;
-  const getChal = async () => { if (Date.now() - chalAt > 15e3) { chalAt = Date.now(); const c = await fetch(`${BRAIN}/challenge`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null); if (c && GAMES[c.game]) chal = c; } return chal; };
+  let chal = {}, chalAt = 0; chalNow = () => chal;
+  const getChal = async () => { if (Date.now() - chalAt > 15e3) { chalAt = Date.now(); const c = await fetch(`${BRAIN}/challenge`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null); if (c && (GAMES[c.game] || !c.game)) chal = c; } return chal; };
   // set the Multiplier box: the challenge target on the challenge game, a modest one otherwise
   async function setTarget(key) {
-    if (key !== 'limbo' && key !== 'dice') return true;
     const c = await getChal();
-    const want = key === c.game ? String(c.target) : key === 'limbo' ? pick(['2', '3', '5', '10', '10', '25', '50', '100']) : key === 'dice' ? pick(['2', '3', '5', '10', '10', '25', '50']) : null;
-    if (!want) return true;
-    const got = await setByLabel(ui, /multiplier/i, want);
-    return got !== null && Number(got) === Number(want);
+    const onCh = key === c.game && c.kind === 'mult';
+    if (key === 'limbo' || key === 'dice') {
+      const want = onCh ? String(c.target) : key === 'limbo' ? pick(['2', '3', '5', '10', '10', '25', '50', '100']) : pick(['2', '3', '5', '10', '10', '25', '50']);
+      const got = await setByLabel(ui, /multiplier/i, want);
+      return got !== null && Number(got) === Number(want);
+    }
+    if (key === 'crash' && onCh) await setByLabel(ui, /cash ?out at|auto ?cash ?out/i, String(c.target));
+    if (onCh && (key === 'plinko' || key === 'keno' || key === 'wheel')) await clickText(ui, /^\s*high\s*$/i);   // big targets need high risk
+    return true;
   }
+
   const noAuto = {}, autoMiss = new Proxy({}, { get: (o, k) => o[k] || 0 });
   const benched = {};                                    // game -> until (keeps failing: skip it for a while)
   const bench = (k, why) => { if (k === 'dice') return; benched[k] = Date.now() + 2 * 3600e3; log(`benching ${GAMES[k].name} for 2h (${why})`); };
@@ -583,7 +588,7 @@ module.exports = function startPlayer(page, shared) {
   const recent = [];
   function nextGame() {
     const ok = k => !(benched[k] > Date.now());
-    if (current && Math.random() < 0.25 && chal.game !== current && ok(chal.game)) return chal.game;   // the challenge game, now and then
+    if (chal.game && GAMES[chal.game] && chal.game !== current && ok(chal.game) && Math.random() < 0.75) return chal.game;   // mostly: go after the current challenge
     const keys = Object.keys(GAMES).filter(k => k !== current && ok(k) && recent.filter(r => r === k).length < 2);
     if (!keys.length) return 'dice';
     const bag = keys.flatMap(k => Array(GAMES[k].weight).fill(k));
@@ -591,7 +596,7 @@ module.exports = function startPlayer(page, shared) {
   }
   async function open(key, by) {
     recent.push(key); if (recent.length > 5) recent.shift();
-    current = key; until = Date.now() + rand(5, 10) * 60e3; fails = 0; openedAt = Date.now();
+    current = key; until = Date.now() + (key === chal.game ? 25 : rand(5, 10)) * 60e3; fails = 0; openedAt = Date.now();
     log('opening', GAMES[key].name, by ? `(requested by ${by})` : '');
     let ok = false;
     const urls = [...(goodUrls[key] ? [goodUrls[key]] : []), ...GAMES[key].slugs.map(sl => `${BASE}/games/housegames-${sl}`), ...(gameUrls[key] ? [gameUrls[key]] : [])];
@@ -676,7 +681,7 @@ module.exports = function startPlayer(page, shared) {
     log('on: playing House Originals at bet 0');
     current = '';
     await findGames().catch(e => log('findGames', e.message));
-    await open(nextGame());                         // start on a random original
+    await open(GAMES[process.env.START_GAME] ? process.env.START_GAME : nextGame());   // start on a random original (or START_GAME)
     for (;;) {
       await sleep(rand(4000, 7000));
       if (shared.blocked || shared.lounge || shared.loggedOut || shared.loggingIn) { shared.lastRound = Date.now(); continue; }
@@ -701,7 +706,10 @@ module.exports = function startPlayer(page, shared) {
           nextSlotBreak = Date.now() + rand(80, 110) * 60e3;
           await slots.play(slots.favourite()); await open(nextGame()); continue;
         }
-        if (Date.now() > until) { await getChal(); await open(nextGame()); continue; }
+        await getChal();
+        if (chal.game && current !== chal.game && until - Date.now() > 3 * 60e3 && Date.now() - openedAt > 4 * 60e3) until = Date.now();   // a new mission came up: go for it soon
+        if (current === chal.game && Date.now() > until - 60e3 && Date.now() - openedAt < 25 * 60e3) until = Date.now() + 2 * 60e3;   // still chasing: keep going
+        if (Date.now() > until) { await open(nextGame()); continue; }
         if (!/\/games\//.test(page.url())) { await open(current); continue; }
 
         const g = GAMES[current];
@@ -729,7 +737,7 @@ module.exports = function startPlayer(page, shared) {
           continue;
         }
         await setTarget(current);
-        if (g.auto && !noAuto[current] && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.85)) {
+        if (g.auto && !noAuto[current] && !(chal.game === current && chal.kind === 'steps') && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.85)) {
           const ok = await autoBatch(g); fails = 0;
           if (ok) { autoMiss[current] = 0; justRan = true; continue; }
           if (++autoMiss[current] >= 3) { noAuto[current] = 1; log('autobet not working on', g.name, '- playing manual there'); }
@@ -747,13 +755,16 @@ module.exports = function startPlayer(page, shared) {
             }
             await sleep(2000); continue; }
           if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
+        let stepInfo = null;
         const t0 = Date.now(); await b.click({ timeout: 3000 });
         if (g.bj) await playBlackjack(ui, tell);
         if (g.crash) { await sleep(4000); for (let w = 0; w < 60 && !(await playButton(ui, g.button)); w++) await sleep(1000); }
         if (g.steps) {                                                  // steps go up after a win, down after a bust
           const st = g.steps; level[current] = level[current] || Math.round((st.min + st.max) / 2);
           const cap = st.cap || st.max, spread = pick([-2, -1, -1, 0, 0, 0, 1, 1, 2, 3]);
-          const r = await runSteps(ui, st, Math.max(st.min, Math.min(cap, level[current] + spread)));
+          const goal = chal.game === current && chal.kind === 'steps' ? Number(chal.target) : Math.max(st.min, Math.min(cap, level[current] + spread));
+          const r = await runSteps(ui, st, goal);
+          stepInfo = { steps: r.done, survived: r.survived ? 1 : 0 };
           if (r.survived === true) level[current] = Math.min(st.cap || st.max, level[current] + 1);
           else if (r.survived === false) level[current] = Math.max(st.min, level[current] - 1);
           if (r.survived && r.done > (bestLevel[current] || 0)) { bestLevel[current] = r.done; if (r.done >= 3) tell('steps', { game: g.name, steps: r.done }); }
@@ -761,7 +772,7 @@ module.exports = function startPlayer(page, shared) {
         fails = 0; rounds++; openTries = 0; waitTries = 0; stuckReloads[current] = 0;
         await sleep(2500);
         const res = lastJson && lastJson.at >= t0 ? lastJson : null;
-        tell('round', { game: g.name, win: res ? (res.win ? 1 : 0) : '', mult: res ? res.mult : '' });
+        tell('round', { game: g.name, win: res ? (res.win ? 1 : 0) : '', mult: res ? res.mult : '', ...(stepInfo || {}) }); stepInfo = null;
       } catch (e) { log('round error', e.message); await sleep(3000); }
     }
   })();
