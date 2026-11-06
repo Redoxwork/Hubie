@@ -62,9 +62,19 @@ window.__up = function (el) { return el.parentElement || (el.getRootNode && el.g
 window.__text = function (el) { try { return el.innerText || el.textContent || ''; } catch (e) { return ''; } };
 true`;
 const deep = ui => ui.evaluate(DEEP).catch(() => false);
-async function clickText(page, re) {
-  const el = page.locator('button, [role=button], [role=tab]').filter({ hasText: re }).first();
-  if (await el.isVisible().catch(() => false)) { const t = (await el.innerText().catch(() => '')).trim(); if (!NEVER.test(t)) await el.click({ timeout: 3000 }).catch(() => {}); }
+async function clickText(ui, re) {
+  // click the first VISIBLE match (pages often keep hidden copies of tabs/buttons)
+  const all = ui.locator('button, [role=button], [role=tab]').filter({ hasText: re });
+  const n = Math.min(await all.count().catch(() => 0), 15);
+  for (let i = 0; i < n; i++) {
+    const el = all.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const t = (await el.innerText().catch(() => '')).trim();
+    if (!re.test(t) || NEVER.test(t)) continue;
+    await el.click({ timeout: 3000 }).catch(() => {});
+    return true;
+  }
+  return false;
 }
 async function setNumber(page, labelRe, value) {
   const ok = await page.evaluate(({ src }) => {
@@ -323,7 +333,13 @@ module.exports = function startPlayer(page, shared) {
   const MAX_MS = Number(process.env.AUTO_MAX_MIN || 25) * 60e3;
   async function autoBatch(g) {
     const n = pick(ROUNDS);
-    await clickText(ui, /^auto$/i); await sleep(1000);
+    let onAuto = false;
+    for (let t = 0; t < 3 && !onAuto; t++) {
+      await clickText(ui, /^\s*auto\s*$/i); await sleep(1200);
+      onAuto = await ui.locator('button:visible').filter({ hasText: /start auto/i }).count().then(c => c > 0).catch(() => false)
+        || await deep(ui).then(() => ui.evaluate(() => window.__deepAll('label,span,div,p').some(e => (e.offsetParent || e.getClientRects().length) && e.children.length <= 2 && /^\s*(number of (bets|rounds)|on win|on loss|stop on (profit|loss))\b/i.test(e.textContent || '')))).catch(() => false);
+    }
+    if (!onAuto) { log('auto: Auto tab did not open, playing manual'); if (!autoDiagDone) { autoDiagDone = true; await autoDiag(ui); } await clickText(ui, /^\s*manual\s*$/i); return false; }
     if (!(await zeroBet(ui))) { log('auto: bet box not 0, skipping'); await clickText(ui, /^manual$/i); return false; }
     if (g.prep) await g.prep(ui);
     if (g.autoPrep) await g.autoPrep(ui);
@@ -331,7 +347,7 @@ module.exports = function startPlayer(page, shared) {
     if (!set && !autoDiagDone) { autoDiagDone = true; await autoDiag(ui); }
     if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(ui, /^manual$/i); return false; }
     if (!(await zeroBet(ui))) { await clickText(ui, /^manual$/i); return false; }
-    const start = ui.locator('button').filter({ hasText: /^\s*start autobet/i }).first();
+    const start = ui.locator('button:visible').filter({ hasText: /^\s*(start autobet|start auto|start)\s*$/i }).first();
     if (!(await start.isVisible().catch(() => false)) || !(await start.isEnabled().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(ui, /^manual$/i); return false; }
     let got = 0, wins = 0, best = 0;
     onAutoResult = res => {
@@ -342,7 +358,7 @@ module.exports = function startPlayer(page, shared) {
     tell('auto', { game: g.name, n });
     log(`auto: ${n} bets on ${g.name} at 0`);
     await start.click({ timeout: 3000 });
-    const stop = ui.locator('button').filter({ hasText: /stop autobet/i }).first();
+    const stop = ui.locator('button:visible').filter({ hasText: /^\s*(stop autobet|stop auto|stop)\s*$/i }).first();
     const t0 = Date.now(); let why = 'done', lastQ = 0;
     while (Date.now() - t0 < Math.min(n * 4000 + 20000, MAX_MS)) {
       await sleep(1000);
