@@ -150,7 +150,11 @@ async function zeroBet(ui) {
   }).catch(() => null);
   const num = x => parseFloat(String(x || '0').replace(',', '.').replace(/[^\d.]/g, '') || '0');
   let r = await read();
-  if (!r) return false;
+  if (!r) {
+    const t = await ui.locator('button:visible').filter({ hasText: /^\s*bet\s*[·•:-]\s*[\d.,]+/i }).first().innerText().catch(() => '');
+    const m = /bet\s*[·•:-]\s*([\d.,]+)/i.exec(t || '');
+    return !!m && parseFloat(m[1].replace(/,/g, '')) === 0;
+  }
   if (num(r.v) !== 0) {
     if (!r.edit) return false;                                          // shows a real amount and we can't change it: never bet
     const el = ui.locator('[data-hubie-bet="1"]').first();             // playwright locators see inside shadow DOM
@@ -369,7 +373,7 @@ async function bjRead(ui) {
   await deep(ui);
   return ui.evaluate(() => {
     const vis = e => !!(e.offsetParent || e.getClientRects().length);
-    const vals = window.__deepAll('span,div,p,b,strong').filter(e => vis(e) && e.children.length === 0 && /^\s*(\d{1,2})(\s*[\/,]\s*\d{1,2})?\s*$/.test(e.textContent || '') && !e.closest('input'))
+    const vals = window.__deepAll('span,div,p,b,strong').filter(e => vis(e) && e.children.length === 0 && /^\s*(\d{1,2})(\s*[\/,]\s*\d{1,2})?\s*$/.test(e.textContent || '') && !e.closest('input') && !e.closest('button') && !e.closest('[role=button]'))
       .map(e => { const t = e.textContent.trim(); const n = t.split(/[\/,]/).map(Number).filter(x => x <= 21); const r = e.getBoundingClientRect(); return { el: e, y: r.top, x: r.left, best: Math.max(...n), soft: n.length > 1 }; })
       .filter(v => v.best >= 2 && v.best <= 21);
     if (vals.length < 2) return null;
@@ -490,7 +494,7 @@ module.exports = function startPlayer(page, shared) {
   shared.playing = true;
   sniff(page);
   feedTell = (t, q) => fetch(`${BRAIN}/event?type=${t}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
-  let openTries = 0, autoDiagDone = false, openedAt = Date.now(), justRan = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
+  let waitTries = 0, openTries = 0, autoDiagDone = false, openedAt = Date.now(), justRan = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
   const tellRaw = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const tell = (type, q) => { if (type === 'round') shared.lastRound = Date.now(); return tellRaw(type, q); };
   const slots = require('./slots')({ page, shared, base: BASE, tell });
@@ -524,6 +528,7 @@ module.exports = function startPlayer(page, shared) {
     const got = await setByLabel(ui, /multiplier/i, want);
     return got !== null && Number(got) === Number(want);
   }
+  const noAuto = {}, autoMiss = new Proxy({}, { get: (o, k) => o[k] || 0 });
   const benched = {};                                    // game -> until (keeps failing: skip it for a while)
   const bench = (k, why) => { if (k === 'dice') return; benched[k] = Date.now() + 2 * 3600e3; log(`benching ${GAMES[k].name} for 2h (${why})`); };
   const recent = [];
@@ -656,15 +661,23 @@ module.exports = function startPlayer(page, shared) {
           continue;
         }
         await setTarget(current);
-        if (g.auto && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.85)) { const ok = await autoBatch(g); fails = 0; if (ok) { justRan = true; continue; } }
+        if (g.auto && !noAuto[current] && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.85)) {
+          const ok = await autoBatch(g); fails = 0;
+          if (ok) { autoMiss[current] = 0; justRan = true; continue; }
+          if (++autoMiss[current] >= 3) { noAuto[current] = 1; log('autobet not working on', g.name, '- playing manual there'); }
+        }
         if (g.prep) await g.prep(ui);
         if (!(await zeroBet(ui))) continue;                         // check again right before the click
         const b = await playButton(ui, g.button);
-        if (!b) { if (await anyVisible(ui, /^\s*(hit|stand|cash ?out|random( tile| pick)?|higher|lower|waiting|starting)\b/i)) { await sleep(2000); continue; }
+        if (!b) { if (await anyVisible(ui, /^\s*(hit|stand|cash ?out|random( tile| pick)?|higher|lower|waiting|starting)\b/i)) {
+            waitTries++;
+            if (g.steps && g.steps.step === 'safer' && waitTries <= 3) { await runSteps(ui, g.steps, 1); continue; }   // Hilo round left open
+            if (waitTries > 12) { log('round stuck on', g.name, ': reloading'); waitTries = 0; await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); }
+            await sleep(2000); continue; }
           if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
         if (g.bj) await playBlackjack(ui, tell);
-        if (g.crash) { for (let w = 0; w < 60 && !(await playButton(ui, g.button)); w++) await sleep(1000); }
+        if (g.crash) { await sleep(4000); for (let w = 0; w < 60 && !(await playButton(ui, g.button)); w++) await sleep(1000); }
         if (g.steps) {                                                  // steps go up after a win, down after a bust
           const st = g.steps; level[current] = level[current] || st.min;
           const cap = st.cap || st.max, spread = pick([-2, -1, -1, 0, 0, 0, 1, 1, 2, 3]);
@@ -673,7 +686,7 @@ module.exports = function startPlayer(page, shared) {
           else if (r.survived === false) level[current] = Math.max(st.min, level[current] - 1);
           if (r.survived && r.done > (bestLevel[current] || 0)) { bestLevel[current] = r.done; if (r.done >= 3) tell('steps', { game: g.name, steps: r.done }); }
         }
-        fails = 0; rounds++; openTries = 0;
+        fails = 0; rounds++; openTries = 0; waitTries = 0;
         await sleep(2500);
         const res = lastJson && lastJson.at >= t0 ? lastJson : null;
         tell('round', { game: g.name, win: res ? (res.win ? 1 : 0) : '', mult: res ? res.mult : '' });
