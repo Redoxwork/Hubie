@@ -120,6 +120,8 @@ module.exports = function startPlayer(page, shared) {
   sniff(page);
   let current = 'dice', until = Date.now(), fails = 0, rounds = 0;
   const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`).catch(() => {});
+  const slots = require('./slots')({ page, shared, base: BASE, tell });
+  let nextSlotBreak = Date.now() + rand(40, 70) * 60e3;
   function nextGame() {
     const keys = Object.keys(GAMES).filter(k => k !== current);
     const bag = keys.flatMap(k => Array(GAMES[k].weight).fill(k));
@@ -172,8 +174,16 @@ module.exports = function startPlayer(page, shared) {
         // chat request first, then rotation
         const q = await fetch(`${BRAIN}/queue`).then(r => r.json()).catch(() => null);
         const want = q && resolve(q.game);
-        if (q && q.game && !want) tell('unknown', { game: q.game, by: q.by || '' });
+        if (q && q.game && !want) {                                    // not an original: try it as a slot (Fun mode)
+          if (process.env.SLOTS === '1') { await slots.play(q.game, q.by); await open('dice'); }
+          else tell('unknown', { game: q.game, by: q.by || '' });
+          continue;
+        }
         if (want) { await open(want, q.by); continue; }
+        if (process.env.SLOTS === '1' && Date.now() > nextSlotBreak) {  // now and then, a slot break from Hubie's list
+          nextSlotBreak = Date.now() + rand(40, 70) * 60e3;
+          await slots.play(slots.favourite()); await open('dice'); continue;
+        }
         if (Date.now() > until) { await open(current === 'dice' || Math.random() < 0.35 ? nextGame() : 'dice'); continue; }
         if (!/\/games\//.test(page.url())) { await open(current); continue; }
 

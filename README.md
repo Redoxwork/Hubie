@@ -70,6 +70,7 @@ Why the relay: if Kick drops the connection, only the small **pusher** restarts 
 | `hubie chat <name> <msg>` / `hubie follow <name>` | Pretend a viewer chatted / followed (testing) |
 | `hubie game guess` / `hubie game poll` | Start a chat game now (they also start by themselves every 12-18 min when chat is active) |
 | `echo GAMES=1 >> /etc/hubie.env && hubie live` | Turn on the game player (House Originals at bet 0) |
+| `echo SLOTS=1 >> /etc/hubie.env && hubie live` | Also allow provider slots (Fun mode only, `!play <slot name>`) |
 | `hubie update` | Pull the latest code |
 
 ## Safety
