@@ -64,18 +64,55 @@ async function setNumber(page, labelRe, value) {
   if (ok) await page.locator('[data-hubie-set="1"]').first().fill(value, { timeout: 3000 }).catch(() => {});
 }
 // Find the Bet Amount box, force it to 0, and confirm. Returns true only if it reads exactly 0.
-async function zeroBet(page) {
-  const read = () => page.evaluate(() => {
-    for (const inp of document.querySelectorAll('input')) {
-      if (!inp.offsetParent) continue;
-      let p = inp; for (let i = 0; i < 5 && p; i++, p = p.parentElement) if (/bet amount|chip value/i.test(p.innerText || '')) { inp.setAttribute('data-hubie-bet', '1'); return inp.value; }
+// `ui` is the frame that holds the game (the page itself, or an embedded game frame).
+async function zeroBet(ui) {
+  const read = () => ui.evaluate(() => {
+    const vis = e => !!(e.offsetParent || e.getClientRects().length);
+    document.querySelectorAll('[data-hubie-bet]').forEach(e => e.removeAttribute('data-hubie-bet'));
+    const ok = x => vis(x) && !/checkbox|radio|range|hidden/i.test(x.type);
+    let inp = null;
+    // 1) a label whose own text is "Bet Amount" -> the nearest input below it
+    for (const el of document.querySelectorAll('label,span,div,p,h1,h2,h3,h4,h5,h6')) {
+      if (el.children.length > 3) continue;
+      if (!/^\s*(bet amount|bet|amount|chip value)\s*$/i.test(el.textContent || '')) continue;
+      let p = el;
+      for (let i = 0; i < 5 && p && !inp; i++, p = p.parentElement) inp = [...p.querySelectorAll('input')].find(ok) || null;
+      if (inp) break;
     }
-    return null;
+    // 2) fallback: first input inside a box that mentions bet amount
+    if (!inp) for (const x of document.querySelectorAll('input')) {
+      if (!ok(x)) continue;
+      let p = x; for (let i = 0; i < 5 && p; i++, p = p.parentElement) if (/bet amount|chip value/i.test(p.innerText || '')) { inp = x; break; }
+      if (inp) break;
+    }
+    if (!inp) return null;
+    inp.setAttribute('data-hubie-bet', '1');
+    return inp.value;
   }).catch(() => null);
   let v = await read();
   if (v === null) return false;
-  if (parseFloat(v || '0') !== 0) { await page.locator('[data-hubie-bet="1"]').first().fill('0', { timeout: 3000 }).catch(() => {}); await sleep(300); v = await read(); }
-  return v !== null && parseFloat(v || '0') === 0;
+  const num = x => parseFloat(String(x || '0').replace(',', '.'));
+  if (num(v) !== 0) { await ui.locator('[data-hubie-bet="1"]').first().fill('0', { timeout: 3000 }).catch(() => {}); await sleep(300); v = await read(); }
+  return v !== null && num(v) === 0;
+}
+// which frame holds the game controls (main page or an embedded game)
+async function findUI(page) {
+  for (const f of [page.mainFrame(), ...page.frames().filter(f => f !== page.mainFrame())]) {
+    if (/challenges\.cloudflare|turnstile|about:blank/.test(f.url())) continue;
+    const has = await f.evaluate(() => /bet amount|chip value/i.test(document.body ? document.body.innerText : '')).catch(() => false);
+    if (has) return f;
+  }
+  return page.mainFrame();
+}
+// one-time dump when the bet box can't be found, so it can be fixed from the log
+async function diag(page) {
+  for (const f of page.frames()) {
+    const info = await f.evaluate(() => [...document.querySelectorAll('input')].slice(0, 8).map(x => {
+      const p = x.parentElement && x.parentElement.parentElement;
+      return `${x.type}|${x.name || ''}|${x.placeholder || ''}|v=${x.value}|vis=${!!(x.offsetParent || x.getClientRects().length)}|near=${((p && p.innerText) || '').replace(/\s+/g, ' ').slice(0, 40)}`;
+    })).catch(e => ['err ' + e.message]);
+    log('diag frame', f.url().slice(0, 70), info.length ? '\n   ' + info.join('\n   ') : '(no inputs)');
+  }
 }
 async function playButton(page, re) {
   const all = page.locator('button');
@@ -163,7 +200,7 @@ module.exports = function startPlayer(page, shared) {
   page.setDefaultTimeout(8000);                       // no action can hang the loop
   shared.playing = true;
   sniff(page);
-  let current = 'dice', until = Date.now(), fails = 0, rounds = 0;
+  let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
   const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const slots = require('./slots')({ page, shared, base: BASE, tell });
   let nextSlotBreak = Date.now() + rand(90, 150) * 60e3;
@@ -176,12 +213,12 @@ module.exports = function startPlayer(page, shared) {
     if (g.risk) {
       let r = pref.risk && g.risk.includes(pref.risk) ? pref.risk : null;
       if (!r) r = pick(g.risk.flatMap(x => Array(x === 'medium' || x === 'classic' ? 3 : 1).fill(x)));
-      await clickText(page, new RegExp('^' + r + '$', 'i'));
+      await clickText(ui, new RegExp('^' + r + '$', 'i'));
       riskNow = r; tell('setting', { game: g.name, risk: r, by: pref.by || '' });
     }
     if (g.mines) {
       const n = pref.risk === 'high' ? 5 : pref.risk === 'low' ? 1 : pick(g.mines);
-      const got = await setByLabel(page, /mines/i, n);
+      const got = await setByLabel(ui, /mines/i, n);
       if (got !== null) tell('setting', { game: g.name, risk: `${n} mines`, by: pref.by || '' });
     }
   }
@@ -193,7 +230,7 @@ module.exports = function startPlayer(page, shared) {
     const c = await getChal();
     const want = key === c.game ? String(c.target) : key === 'limbo' ? pick(['2', '3', '5']) : null;
     if (!want) return true;
-    const got = await setByLabel(page, /multiplier/i, want);
+    const got = await setByLabel(ui, /multiplier/i, want);
     return got !== null && Number(got) === Number(want);
   }
   function nextGame() {
@@ -212,36 +249,36 @@ module.exports = function startPlayer(page, shared) {
       if (!/404|not found/i.test(t)) break;
       log('no page at', slug);
     }
-    await clickText(page, /^manual$/i);
+    await clickText(ui, /^manual$/i);
     tell('game', { game: GAMES[key].name, by: by || '' });
     await applySettings(key);
   }
   // Autobet batch: 10-25 bets, bet box must stay 0 the whole time, stops early if anything looks wrong
   async function autoBatch(g) {
     const n = Math.floor(rand(10, 26));
-    await clickText(page, /^auto$/i); await sleep(800);
-    if (!(await zeroBet(page))) { log('auto: bet box not 0, skipping'); await clickText(page, /^manual$/i); return false; }
-    const set = await setByLabel(page, /number of bets/i, n);
-    if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(page, /^manual$/i); return false; }
-    if (!(await zeroBet(page))) { await clickText(page, /^manual$/i); return false; }
-    const start = page.locator('button').filter({ hasText: /^\s*start autobet/i }).first();
-    if (!(await start.isVisible().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(page, /^manual$/i); return false; }
+    await clickText(ui, /^auto$/i); await sleep(800);
+    if (!(await zeroBet(ui))) { log('auto: bet box not 0, skipping'); await clickText(ui, /^manual$/i); return false; }
+    const set = await setByLabel(ui, /number of bets/i, n);
+    if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(ui, /^manual$/i); return false; }
+    if (!(await zeroBet(ui))) { await clickText(ui, /^manual$/i); return false; }
+    const start = ui.locator('button').filter({ hasText: /^\s*start autobet/i }).first();
+    if (!(await start.isVisible().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(ui, /^manual$/i); return false; }
     let got = 0;
     onAutoResult = res => { got++; rounds++; tell('round', { game: g.name, win: res.win ? 1 : 0, mult: res.mult }); };
     tell('auto', { game: g.name, n });
     log(`auto: ${n} bets on ${g.name} at 0`);
     await start.click({ timeout: 3000 });
-    const stop = page.locator('button').filter({ hasText: /stop autobet/i }).first();
+    const stop = ui.locator('button').filter({ hasText: /stop autobet/i }).first();
     const t0 = Date.now();
     while (Date.now() - t0 < n * 4000 + 20000) {
       await sleep(1000);
-      const v = await readBet(page);
+      const v = await readBet(ui);
       if (v !== null && parseFloat(v || '0') !== 0) { log('auto: BET BOX NOT 0, stopping now'); await stop.click({ timeout: 3000 }).catch(() => {}); break; }
       if (shared.blocked || got >= n || !(await stop.isVisible().catch(() => false))) break;
     }
     if (await stop.isVisible().catch(() => false)) await stop.click({ timeout: 3000 }).catch(() => {});
     onAutoResult = null;
-    await sleep(1000); await clickText(page, /^manual$/i);
+    await sleep(1000); await clickText(ui, /^manual$/i);
     return true;
   }
 
@@ -270,17 +307,27 @@ module.exports = function startPlayer(page, shared) {
 
         const g = GAMES[current];
         if (await page.getByRole('button', { name: /^log ?in$/i }).first().isVisible().catch(() => false)) { if (++fails % 10 === 1) log('not logged in: waiting'); continue; }
-        if (!(await zeroBet(page))) { if (++fails >= 3) { log('bet box not confirmed at 0: skipping', g.name); await open('dice'); } continue; }
+        if (!(await zeroBet(ui))) {
+          fails++;
+          if (fails === 2) ui = await findUI(page);                    // maybe the game is in an embedded frame
+          if (fails === 4 && !diagDone[current]) { diagDone[current] = 1; log('bet box not found on', g.name, '- details below'); await diag(page); }
+          if (fails >= 8) {                                             // give up on this game for a while, quietly
+            log('bet box not confirmed at 0 on', g.name, '- moving on');
+            if (current !== 'dice') await open('dice');
+            else { await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); fails = 0; await sleep(20000); }
+          }
+          continue;
+        }
         await setTarget(current);
         if (g.auto && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.3)) { await autoBatch(g); fails = 0; continue; }
-        if (g.prep) await g.prep(page);
-        if (!(await zeroBet(page))) continue;                         // check again right before the click
-        const b = await playButton(page, g.button);
+        if (g.prep) await g.prep(ui);
+        if (!(await zeroBet(ui))) continue;                         // check again right before the click
+        const b = await playButton(ui, g.button);
         if (!b) { if (++fails >= 5) { log('no play button on', g.name); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
         if (g.steps) {                                                  // steps go up after a win, down after a bust
           const st = g.steps; level[current] = level[current] || st.min;
-          const r = await runSteps(page, st, level[current]);
+          const r = await runSteps(ui, st, level[current]);
           if (r.survived === true) level[current] = Math.min(st.cap || st.max, level[current] + 1);
           else if (r.survived === false) level[current] = Math.max(st.min, level[current] - 1);
           if (r.survived && r.done > (bestLevel[current] || 0)) { bestLevel[current] = r.done; if (r.done >= 3) tell('steps', { game: g.name, steps: r.done }); }
