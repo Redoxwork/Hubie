@@ -313,7 +313,7 @@ async function bjRead(ui) {
   return ui.evaluate(() => {
     const vis = e => !!(e.offsetParent || e.getClientRects().length);
     const vals = window.__deepAll('span,div,p,b,strong').filter(e => vis(e) && e.children.length === 0 && /^\s*(\d{1,2})(\s*[\/,]\s*\d{1,2})?\s*$/.test(e.textContent || '') && !e.closest('input'))
-      .map(e => { const t = e.textContent.trim(); const n = t.split(/[\/,]/).map(Number).filter(x => x <= 21); const r = e.getBoundingClientRect(); return { y: r.top, x: r.left, best: Math.max(...n), soft: n.length > 1 }; })
+      .map(e => { const t = e.textContent.trim(); const n = t.split(/[\/,]/).map(Number).filter(x => x <= 21); const r = e.getBoundingClientRect(); return { el: e, y: r.top, x: r.left, best: Math.max(...n), soft: n.length > 1 }; })
       .filter(v => v.best >= 2 && v.best <= 21);
     if (vals.length < 2) return null;
     // split the table into dealer (top) and player (bottom): the "blackjack pays" line, else the middle
@@ -323,12 +323,25 @@ async function bjRead(ui) {
     if (!top.length || !bot.length) return null;
     // the total badge is always >= any single card's number on that side
     const d = top.reduce((a, b) => b.best > a.best ? b : a), me = bot.reduce((a, b) => b.best > a.best || (b.best === a.best && b.soft) ? b : a);
+    // the player's card ranks (A, 2-10, J, Q, K) under the line, not the total badge itself
+    const ranks = window.__deepAll('span,div,p,b,strong').filter(e => vis(e) && e.children.length === 0 && e !== me.el && e.getBoundingClientRect().top >= cut &&
+      /^\s*(A|K|Q|J|10|[2-9])\s*$/.test(e.textContent || '') && !e.closest('button') && !e.closest('input')).map(e => e.textContent.trim());
+    const val = r => r === 'A' ? 11 : /^[KQJ]$/.test(r) ? 10 : Number(r);
     const live = window.__deepAll('button').filter(b => vis(b) && !b.disabled).map(b => (b.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase());
-    return { dealer: d.best, me: me.best, soft: me.soft, canDouble: live.some(t => /\bdouble\b/.test(t)), canSplit: live.some(t => /\bsplit\b/.test(t)) };
+    const pair = ranks.length === 2 && val(ranks[0]) === val(ranks[1]) ? val(ranks[0]) : 0;
+    return { dealer: d.best, me: me.best, soft: me.soft || (ranks.length === 2 && ranks.includes('A') && me.best <= 21 && me.best >= 12), pair, cards: ranks.length, canDouble: live.some(t => /\bdouble\b/.test(t)), canSplit: live.some(t => /\bsplit\b/.test(t)) };
   }).catch(() => null);
 }
 function bjMove(h) {
-  const { me, dealer: d, soft } = h;
+  const { me, dealer: d, soft, pair } = h;
+  if (pair && h.canSplit) {
+    if (pair === 11 || pair === 8) return 'split';
+    if (pair === 9 && d !== 7 && d <= 9) return 'split';
+    if ((pair === 2 || pair === 3 || pair === 7) && d <= 7) return 'split';
+    if (pair === 6 && d <= 6) return 'split';
+    if (pair === 4 && (d === 5 || d === 6)) return 'split';
+  }
+  if (h.cards > 2) h = { ...h, canDouble: false };
   if (soft) { if (me >= 19) return 'stand'; if (me === 18) return d >= 9 ? 'hit' : (d >= 3 && d <= 6 && h.canDouble ? 'double' : 'stand'); if (me >= 15 && d >= 4 && d <= 6 && h.canDouble) return 'double'; return 'hit'; }
   if (me >= 17) return 'stand';
   if (me >= 13) return d <= 6 ? 'stand' : 'hit';
@@ -355,9 +368,10 @@ async function playBlackjack(ui, tell) {
     if (!hit && !stand) return;
     const h = await bjRead(ui);
     let move = h ? bjMove(h) : 'stand';
-    let b = move === 'double' ? await playButton(ui, /^\s*(2\s*[x×]\s*)?double( down)?\s*$/i) : null;
-    if (!b) { if (move === 'double') move = 'hit'; b = move === 'hit' ? (hit || stand) : (stand || hit); }
-    if (h) tell('bj', { me: h.me + (h.soft ? ' soft' : ''), dealer: h.dealer, action: move });
+    let b = move === 'double' ? await playButton(ui, /^\s*(2\s*[x×]\s*)?double( down)?\s*$/i) : move === 'split' ? await playButton(ui, /^\s*split\s*$/i) : null;
+    if (!b) { if (move === 'double' || move === 'split') { const h2 = { ...h, pair: 0, canDouble: false }; move = bjMove(h2); } b = move === 'hit' ? (hit || stand) : (stand || hit); }
+    if (h) tell('bj', { me: h.me + (h.soft ? ' soft' : ''), dealer: h.dealer, action: move, pair: h.pair || '' });
+    await sleep(rand(1200, 2600));                                   // a beat to 'think', like a real player
     await b.click({ timeout: 3000 }).catch(() => {});
     await sleep(rand(1800, 2600));
   }
