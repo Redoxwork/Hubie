@@ -490,6 +490,7 @@ function sniff(page) {
       if (!/housebets/.test(r.url()) || !/json/.test(r.headers()['content-type'] || '')) return;
       const j = await r.json();
       if (/live-?feed|live-?bets|recent-?bets|high-?rollers|lucky-?wins/i.test(r.url())) { onFeed(j); return; }
+      if (/fairness|paytable|config|settings|rules|history|seed|stats|leaderboard|limits|currencies/i.test(r.url())) return;
       const res = findResult(j);
       if (res) { lastJson = { at: Date.now(), ...res }; if (onAutoResult) onAutoResult(res); if (keysLogged < 3) { keysLogged++; log('result keys from', r.url().split('?')[0].slice(-40), Object.keys(j).slice(0, 12).join(',')); } }
     } catch {}
@@ -574,6 +575,8 @@ module.exports = function startPlayer(page, shared) {
     for (let t = 0; t < 3 && !onAuto; t++) {
       await clickText(ui, /^\s*auto\s*$/i); await sleep(1200);
       onAuto = await autoRunning(ui) || await ui.locator('button:visible').filter({ hasText: /start auto/i }).count().then(c => c > 0).catch(() => false)
+        || await ui.locator('input[placeholder="∞"]:visible, input[placeholder*="inf" i]:visible').count().then(c => c > 0).catch(() => false)
+        || await ui.locator('button:visible').filter({ hasText: /^\s*start\s*$/i }).count().then(c => c > 0).catch(() => false)
         || await deep(ui).then(() => ui.evaluate(() => window.__deepAll('label,span,div,p').some(e => (e.offsetParent || e.getClientRects().length) && e.children.length <= 2 && /^\s*(number of (bets|rounds)|on win|on loss|stop on (profit|loss))\b/i.test(e.textContent || '')))).catch(() => false);
     }
     if (!onAuto) { log('auto: Auto tab did not open, playing manual'); if (!autoDiagDone) { autoDiagDone = true; await autoDiag(ui); } await clickText(ui, /^\s*manual\s*$/i); return false; }
@@ -581,6 +584,10 @@ module.exports = function startPlayer(page, shared) {
     if (g.prep) await g.prep(ui);
     if (g.autoPrep) await g.autoPrep(ui);
     let set = await setByLabel(ui, /number of (bets|rounds|plays)|no\.? of bets|bets? count|total bets|^\s*(bets|rounds)\s*$/i, n);
+    if (!set) {                                                             // unlabeled bets box (placeholder "∞")
+      const inf = ui.locator('input[placeholder="∞"]:visible, input[placeholder*="inf" i]:visible').first();
+      if (await inf.count().catch(() => 0)) { await inf.fill(String(n), { timeout: 3000 }).catch(() => {}); set = await inf.inputValue().catch(() => null); }
+    }
     if (!set && !autoDiagDone) { autoDiagDone = true; await autoDiag(ui); }
     if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(ui, /^manual$/i); return false; }
     if (!(await zeroBet(ui))) { await clickText(ui, /^manual$/i); return false; }
