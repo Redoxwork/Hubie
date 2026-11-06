@@ -216,10 +216,15 @@ async function pickTiles(ui, n, pattern) {
     for (const p of pos.slice().sort(() => Math.random() - 0.5)) if (!order.includes(p)) order.push(p);   // top up with random ones
     // skip tiles already opened (they change look/disable after a click)
     const fresh = order.filter(p => !p.e.disabled && p.e.getAttribute('aria-disabled') !== 'true' && !p.e.hasAttribute('data-hubie-done'));
+    D('[data-hubie-tile]').forEach(e => e.removeAttribute('data-hubie-tile'));
     let k = 0;
-    for (const p of fresh) { if (k >= n) break; p.e.setAttribute('data-hubie-done', '1'); p.e.click(); k++; }
-    return board.length;
+    for (const p of fresh) { if (k >= n) break; p.e.setAttribute('data-hubie-done', '1'); p.e.setAttribute('data-hubie-tile', String(k)); k++; }
+    return k ? board.length : 0;
   }, { n, pattern }).catch(() => 0);
+  for (let k = 0; ok && k < n; k++) {                                   // real mouse clicks, one by one
+    await ui.locator(`[data-hubie-tile="${k}"]`).first().click({ timeout: 3000 }).catch(() => {});
+    await sleep(rand(350, 800));
+  }
   if (!ok) await clickText(ui, /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i);
   await sleep(600);
   return ok;
@@ -257,6 +262,8 @@ async function setByLabel(ui, labelRe, value) {
 const readBet = page => page.locator('[data-hubie-bet="1"]').first().inputValue().catch(() => null);
 
 // games with steps inside a round (Road, Tower, Mines, Hilo, Blackjack)
+let boardBroken = false;
+const anyVisible = (ui, re) => ui.locator('button:visible').filter({ hasText: re }).count().then(c => c > 0).catch(() => false);
 async function runSteps(page, st, n) {
   await sleep(1500);
   await deep(page); await page.evaluate(() => window.__deepAll('[data-hubie-done]').forEach(e => e.removeAttribute('data-hubie-done'))).catch(() => {});
@@ -272,8 +279,13 @@ async function runSteps(page, st, n) {
         const i = m.indexOf(Math.min(...m)); bs.forEach(x => x.removeAttribute('data-hubie-pick')); bs[i].setAttribute('data-hubie-pick', '1'); return i;
       }).catch(() => -1);
       if (idx >= 0) b = page.locator('[data-hubie-pick="1"]').first();
-    } else if (st.board && Math.random() < 0.8) {                     // click the board itself, in this round's pattern
-      if (await pickTiles(page, 1, pattern)) { done++; await sleep(rand(900, 1800)); if (!(await playButton(page, st.cash))) break; continue; }
+    } else if (st.board && !boardBroken && Math.random() < 0.8) {      // click the board itself, in this round's pattern
+      if (await pickTiles(page, 1, pattern)) {
+        await sleep(rand(900, 1500));
+        if (await playButton(page, st.cash)) { done++; continue; }      // cash out came alive: the tile opened and was safe
+        if (!(await anyVisible(page, st.step)) && !(await anyVisible(page, st.cash))) { done++; break; }   // hit a mine, round over
+        boardBroken = true; log('board clicks not taking: using the Random tile button');
+      }
       b = await playButton(page, st.step);
     } else b = await playButton(page, st.step);
     if (!b || !(await b.isVisible().catch(() => false))) {
@@ -301,10 +313,15 @@ async function bjRead(ui) {
       .map(e => { const t = e.textContent.trim(); const n = t.split(/[\/,]/).map(Number).filter(x => x <= 21); const r = e.getBoundingClientRect(); return { y: r.top, x: r.left, best: Math.max(...n), soft: n.length > 1 }; })
       .filter(v => v.best >= 2 && v.best <= 21);
     if (vals.length < 2) return null;
-    vals.sort((a, b) => a.y - b.y);                          // dealer sits above the player
-    const d = vals[0], me = vals[vals.length - 1];
-    const btns = window.__deepAll('button').filter(vis).map(b => (b.innerText || '').trim().toLowerCase());
-    return { dealer: d.best, me: me.best, soft: me.soft, canDouble: btns.includes('double'), canSplit: btns.includes('split') };
+    // split the table into dealer (top) and player (bottom): the "blackjack pays" line, else the middle
+    const mid = window.__deepAll('div,span,p').find(e => vis(e) && /blackjack pays/i.test(e.textContent || '') && e.children.length <= 2);
+    const ys = vals.map(v => v.y); const cut = mid ? mid.getBoundingClientRect().top : (Math.min(...ys) + Math.max(...ys)) / 2;
+    const top = vals.filter(v => v.y < cut), bot = vals.filter(v => v.y >= cut);
+    if (!top.length || !bot.length) return null;
+    // the total badge is always >= any single card's number on that side
+    const d = top.reduce((a, b) => b.best > a.best ? b : a), me = bot.reduce((a, b) => b.best > a.best || (b.best === a.best && b.soft) ? b : a);
+    const live = window.__deepAll('button').filter(b => vis(b) && !b.disabled).map(b => (b.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase());
+    return { dealer: d.best, me: me.best, soft: me.soft, canDouble: live.some(t => /\bdouble\b/.test(t)), canSplit: live.some(t => /\bsplit\b/.test(t)) };
   }).catch(() => null);
 }
 function bjMove(h) {
@@ -318,16 +335,18 @@ function bjMove(h) {
   if (me === 9) return d >= 3 && d <= 6 && h.canDouble ? 'double' : 'hit';
   return 'hit';
 }
+let shared_bj = 0;
 async function playBlackjack(ui, tell) {
   await sleep(2500);
   for (let i = 0; i < 8; i++) {
     await clickText(ui, /^\s*(no( insurance)?|decline|no thanks)\s*$/i);   // never take insurance
     const btn = re => playButton(ui, re);
     const hit = await btn(/^\s*hit\s*$/i), stand = await btn(/^\s*stand\s*$/i);
+    if (hit || stand) shared_bj = Date.now();
     if (!hit && !stand) return;                                       // hand is over
     const h = await bjRead(ui);
     let move = h ? bjMove(h) : 'stand';
-    let b = move === 'double' ? await btn(/^\s*double( down)?\s*$/i) : null;
+    let b = move === 'double' ? await btn(/^\s*(2\s*[x×]\s*)?double( down)?\s*$/i) : null;
     if (!b) { if (move === 'double') move = 'hit'; b = move === 'hit' ? hit : stand; }
     if (h) tell('bj', { me: h.me + (h.soft ? ' soft' : ''), dealer: h.dealer, action: move });
     await b.click({ timeout: 3000 }).catch(() => {});
@@ -350,11 +369,36 @@ function findResult(o) {
   if (win === null && mult !== null) win = mult >= 1;
   return mult === null && win === null ? null : { mult: mult || 0, win: !!win };
 }
+// other players' big wins from the Live Bets feed (for shoutouts) - never counted as Hubie's rounds
+let feedTell = null, feedLogged = false, lastFeed = 0; const feedSeen = new Set();
+function onFeed(j) {
+  const items = Array.isArray(j.items) ? j.items : Array.isArray(j) ? j : [];
+  if (items.length && !feedLogged) { feedLogged = true; log('live feed item keys:', Object.keys(items[0]).slice(0, 15).join(',')); }
+  for (const it of items) {
+    let mult = 0, game = '', user = '', id = it.id || it.bet_id || '';
+    (function walk(x, d) { if (!x || typeof x !== 'object' || d > 3) return;
+      for (const [k, v] of Object.entries(x)) {
+        if (!mult && typeof v === 'number' && /multiplier|^mult$|payout_?x/i.test(k)) mult = v;
+        if (!game && typeof v === 'string' && /^(game(_?name|_?title|_?slug)?|title|name)$/i.test(k) && d > 0 && /game/i.test(JSON.stringify(Object.keys(x)))) game = v;
+        if (!user && typeof v === 'string' && /^(user_?name|username|display_?name|player_?name|nickname)$/i.test(k)) user = v;
+        if (v && typeof v === 'object') walk(v, d + 1);
+      } })(it, 0);
+    if (!game && typeof it.game === 'string') game = it.game;
+    const key = id || `${user}|${game}|${mult}`;
+    if (feedSeen.has(key)) continue; feedSeen.add(key); if (feedSeen.size > 3000) feedSeen.clear();
+    if (mult >= 100 && Date.now() - lastFeed > 8 * 60e3 && feedTell) {
+      lastFeed = Date.now();
+      feedTell('feed', { user: /private|anonymous|hidden/i.test(user) || !user ? '' : user.slice(0, 24), game: String(game).replace(/^housegames-/, '').slice(0, 30), mult: Math.round(mult * 100) / 100 });
+    }
+  }
+}
 function sniff(page) {
   page.on('response', async r => {
     try {
       if (!/housebets/.test(r.url()) || !/json/.test(r.headers()['content-type'] || '')) return;
-      const j = await r.json(); const res = findResult(j);
+      const j = await r.json();
+      if (/live-?feed|live-?bets|recent-?bets|high-?rollers|lucky-?wins/i.test(r.url())) { onFeed(j); return; }
+      const res = findResult(j);
       if (res) { lastJson = { at: Date.now(), ...res }; if (onAutoResult) onAutoResult(res); if (keysLogged < 3) { keysLogged++; log('result keys from', r.url().split('?')[0].slice(-40), Object.keys(j).slice(0, 12).join(',')); } }
     } catch {}
   });
@@ -365,6 +409,7 @@ module.exports = function startPlayer(page, shared) {
   page.setDefaultTimeout(8000);                       // no action can hang the loop
   shared.playing = true;
   sniff(page);
+  feedTell = (t, q) => fetch(`${BRAIN}/event?type=${t}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   let autoDiagDone = false, openedAt = Date.now(), justRan = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
   const tellRaw = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const tell = (type, q) => { if (type === 'round') shared.lastRound = Date.now(); return tellRaw(type, q); };
@@ -509,7 +554,7 @@ module.exports = function startPlayer(page, shared) {
 
         const g = GAMES[current];
         if (await autoRunning(ui)) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(2000); continue; }
-        if (g.steps && g.steps.cash && await playButton(ui, g.steps.cash)) {   // a round left open: one step, then cash out
+        if (g.steps && g.steps.cash && typeof g.steps.step !== 'string' && (await anyVisible(ui, g.steps.cash)) && !(await playButton(ui, g.button))) {   // a round left open: one step, then cash out
           log('finishing an open round on', g.name);
           await runSteps(ui, g.steps, 1); shared.lastRound = Date.now(); continue;
         }

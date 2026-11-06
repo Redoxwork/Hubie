@@ -143,7 +143,9 @@ module.exports = function slots({ page, shared, base, tell }) {
       if (w !== null) { lastWin = { at: Date.now(), win: w }; if (bonus) onBonusValue(w); if (keysLogged++ < 3) log('win value seen in', r.url().split('?')[0].slice(-40)); }
     } catch {}
   });
-  const busyCpu = () => os.loadavg()[0] > os.cpus().length * 0.85;
+  // leave only if the server stays overloaded (several checks in a row), not on a short spike
+  let hot = 0;
+  const busyCpu = () => { const lim = Number(process.env.SLOT_MAX_LOAD) || os.cpus().length * 1.6; hot = os.loadavg()[0] > lim ? hot + 1 : 0; return hot >= 6; };
   // running bonus total: values that only go up are a running total, otherwise they're per-spin wins to add up
   const bonusTotal = () => { const v = bonus.vals; if (!v.length) return 0; const up = v.every((x, i) => i === 0 || x >= v[i - 1]); return up ? v[v.length - 1] : v.reduce((a, b) => a + b, 0); };
   function onBonusValue(w) {

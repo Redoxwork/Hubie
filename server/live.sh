@@ -98,6 +98,7 @@ renderer(){
 }
 pusher(){
   while :; do
+    if [ -f "$RUN/split-now" ]; then rm -f "$RUN/split-now"; log "pusher: VOD split: offline 90 s so Kick saves part 1 and starts part 2"; sleep 90; fi
     log "pusher: sending to Kick"
     ffmpeg -hide_banner -loglevel error -nostdin -i "$RELAY" -c copy -f flv "$DEST" 2>&1 | hide
     log "pusher: Kick connection ended (code ${PIPESTATUS[0]}), reconnecting"; sleep 2
@@ -161,6 +162,11 @@ while :; do
   fi
   if [ "$(df -BG --output=avail "$H" | tail -1 | tr -dc 0-9)" -lt 15 ]; then
     old=$(ls -1tr "$H"/recordings/hubie/*.mp4 2>/dev/null | head -3); [ -n "$old" ] && { log "watchdog: disk low, removing oldest full recordings"; rm -f $old; }
+  fi
+  # auto-split the Kick VOD (Kick only saves the first 48 h of one stream): once, at SPLIT_HOURS (47 h)
+  SPLITF="$H/data/split-done-$(cat "$H/data/live-since")"
+  if [ ! -f "$SPLITF" ] && [ $(( $(date +%s) - $(cat "$H/data/live-since") )) -gt $(( ${SPLIT_HOURS:-47} * 3600 )) ]; then
+    touch "$SPLITF" "$RUN/split-now"; pkill -f -- "-i $RELAY -c copy" 2>/dev/null
   fi
   # fresh game window every 3 hours (Chrome gets slow over very long runs)
   if [ $(( $(date +%s) - GAME_STARTED )) -gt 10800 ]; then
