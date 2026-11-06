@@ -737,7 +737,7 @@ module.exports = function startPlayer(page, shared) {
       if (Date.now() - lastRes > 10e3 && !(await autoRunning(ui))) break;
       if (Date.now() - lastLog > 60e3) { lastLog = Date.now(); log(`auto: ${got}/${n} on ${g.name}`); }
       // slow game? try the speed gauge once: keep it only if bets really get faster, else switch it back
-      if (process.env.TURBO !== '0' && !speed[g.name] && got >= 8 && Date.now() - t0 > 40e3) {
+      if (process.env.TURBO === '1' && !speed[g.name] && got >= 8 && Date.now() - t0 > 40e3) {
         const before = got / ((Date.now() - t0) / 60e3);
         if (before < 80) {
           const how = await speedBtn(ui);
