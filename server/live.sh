@@ -57,7 +57,8 @@ start_game(){
   WW=$(python3 -c "print(round(1280/$SC))"); WH=$(python3 -c "print(round(720/$SC))")
   local CHG=("${CH[@]/--force-device-scale-factor=1/--force-device-scale-factor=$SC}")
   CHG=("${CHG[@]/--window-size=1280,720/--window-size=$WW,$WH}")
-  DISPLAY=:99 nice -n 5 "${CHG[@]}" "${GPROXY[@]}" --force-prefers-reduced-motion --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
+  # software WebGL so 3D games (Max Win reels) draw without a graphics card
+  DISPLAY=:99 nice -n 5 "${CHG[@]}" "${GPROXY[@]}" --ignore-gpu-blocklist --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --enable-webgl --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
 }
 brain_up(){ curl -fs --max-time 3 http://127.0.0.1:8090/health >/dev/null; }
 start_avatar(){
