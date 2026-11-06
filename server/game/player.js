@@ -28,7 +28,7 @@ const GAMES = {
               prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out/i, pick(['1.5', '2', '3', '5', '10', '10', '25', '50', '100'])) },
   // games with steps inside a round: start, take a few steps, cash out
   road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'hubie-road', 'road'], button: /^(bet|play|start)$/i, weight: 3,
-              steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 2, max: 5, cap: 12, cash: /^cash ?out/i } },
+              steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 3, max: 7, cap: 14, cash: /^cash ?out/i } },
   tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2, risk: ['easy', 'medium', 'hard'],
               steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 2, max: 5, cap: 9, cash: /^cash ?out/i } },
   mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, pick([1, 2, 2, 3, 3, 4, 5, 6])), button: /^(bet|play)$/i, weight: 5, mines: [2, 3, 4, 5, 5, 8, 10, 12],
@@ -545,7 +545,15 @@ module.exports = function startPlayer(page, shared) {
   const noAuto = {}, autoMiss = new Proxy({}, { get: (o, k) => o[k] || 0 });
   const benched = {};                                    // game -> until (keeps failing: skip it for a while)
   const bench = (k, why) => { if (k === 'dice') return; benched[k] = Date.now() + 2 * 3600e3; log(`benching ${GAMES[k].name} for 2h (${why})`); };
-  const gameUrls = {}; let urlsFound = 0;
+  const gameUrls = {}, goodUrls = {}; let urlsFound = 0;
+  // the page we landed on must be this game: its name in the page, and not a different game's name instead
+  const looksLike = key => page.evaluate(({ names, others }) => {
+    const n = t => String(t || '').toLowerCase().replace(/[^a-z]/g, '');
+    const txt = n(document.title + ' ' + location.pathname + ' ' + [...document.querySelectorAll('h1,h2,[class*=title i]')].slice(0, 8).map(e => e.textContent).join(' '));
+    const url = n(location.pathname);
+    if (names.some(x => x.length > 2 && (txt.includes(x) || url.includes(x)))) return true;
+    return !others.some(x => x.length > 3 && url.includes(x));          // no name found: ok unless the address names another game
+  }, { names: [GAMES[key].name, ...GAMES[key].slugs].map(norm), others: Object.entries(GAMES).filter(([k]) => k !== key).flatMap(([, g]) => [g.name, ...g.slugs]).map(norm) }).catch(() => true);
   const is404 = pg => pg.evaluate(() => /page not found|^\s*404\b/i.test((document.title || '') + ' ' + (document.body ? document.body.innerText.slice(0, 400) : ''))).catch(() => false);
   const norm = t => String(t || '').toLowerCase().replace(/[^a-z]/g, '');
   // visit the lobby pages and match every game link to our Originals by its name/picture text
@@ -560,10 +568,15 @@ module.exports = function startPlayer(page, shared) {
         text: [a.innerText, a.getAttribute('aria-label'), a.title, ...[...a.querySelectorAll('img')].map(i => i.alt)].join(' ') }))).catch(() => []));
       if (links.filter(l => /housegames-|originals?\//i.test(l.href)).length >= 10) break;
     }
+    const used = new Set();
     for (const [key, g] of Object.entries(GAMES)) {
-      const names = [g.name, ...g.slugs].map(norm);
-      const hit = links.find(l => /\/(games?|casino|originals?)\//.test(l.href) && names.some(n => n.length > 2 && (norm(l.text).includes(n) || norm(l.href.split('/').pop()).includes(n))));
-      if (hit) gameUrls[key] = hit.href.split('?')[0];
+      const names = [g.name, ...g.slugs].map(norm).filter(n => n.length > 2);
+      const cands = links.filter(l => /\/(games?|casino|originals?)\//.test(l.href) && !used.has(l.href.split('?')[0]));
+      const bySlug = cands.find(l => /housegames-/i.test(l.href) && names.some(n => norm(l.href.split('/').pop()).includes(n)))
+        || cands.find(l => names.some(n => norm(l.href.split('/').pop()) === n || norm(l.href.split('/').pop()).endsWith(n)));
+      const byText = cands.find(l => norm(l.text).length < 30 && names.some(n => norm(l.text) === n || norm(l.text).startsWith(n)));
+      const hit = bySlug || byText;
+      if (hit) { gameUrls[key] = hit.href.split('?')[0]; used.add(gameUrls[key]); }
     }
     log('game links found:', Object.entries(gameUrls).map(([k, u]) => `${k}=${u.replace(BASE, '')}`).join(' '));
   }
@@ -581,14 +594,14 @@ module.exports = function startPlayer(page, shared) {
     current = key; until = Date.now() + rand(5, 10) * 60e3; fails = 0; openedAt = Date.now();
     log('opening', GAMES[key].name, by ? `(requested by ${by})` : '');
     let ok = false;
-    const urls = [...(gameUrls[key] ? [gameUrls[key]] : []), ...GAMES[key].slugs.map(sl => `${BASE}/games/housegames-${sl}`)];
+    const urls = [...(goodUrls[key] ? [goodUrls[key]] : []), ...GAMES[key].slugs.map(sl => `${BASE}/games/housegames-${sl}`), ...(gameUrls[key] ? [gameUrls[key]] : [])];
     for (const url of [...new Set(urls)]) {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('open failed', e.message));
       await sleep(4000);
-      if (!(await is404(page))) { ok = true; gameUrls[key] = url; break; }
+      if (!(await is404(page)) && await looksLike(key)) { ok = true; goodUrls[key] = url; break; }
       log('no page at', url);
     }
-    if (!ok && !(urlsFound > Date.now() - 30 * 60e3)) { await findGames(); if (gameUrls[key]) { await page.goto(gameUrls[key], { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {}); await sleep(4000); ok = !(await is404(page)); } }
+    if (!ok && !(urlsFound > Date.now() - 30 * 60e3)) { await findGames(); if (gameUrls[key]) { await page.goto(gameUrls[key], { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {}); await sleep(4000); ok = !(await is404(page)) && await looksLike(key); if (ok) goodUrls[key] = gameUrls[key]; } }
     if (!ok) {
       log('could not find a page for', GAMES[key].name);
       if (by) tell('unknown', { game: GAMES[key].name, by });
@@ -738,7 +751,7 @@ module.exports = function startPlayer(page, shared) {
         if (g.bj) await playBlackjack(ui, tell);
         if (g.crash) { await sleep(4000); for (let w = 0; w < 60 && !(await playButton(ui, g.button)); w++) await sleep(1000); }
         if (g.steps) {                                                  // steps go up after a win, down after a bust
-          const st = g.steps; level[current] = level[current] || st.min;
+          const st = g.steps; level[current] = level[current] || Math.round((st.min + st.max) / 2);
           const cap = st.cap || st.max, spread = pick([-2, -1, -1, 0, 0, 0, 1, 1, 2, 3]);
           const r = await runSteps(ui, st, Math.max(st.min, Math.min(cap, level[current] + spread)));
           if (r.survived === true) level[current] = Math.min(st.cap || st.max, level[current] + 1);
