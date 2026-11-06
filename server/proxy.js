@@ -13,11 +13,23 @@ const AUTH = up.username
   : null;
 const UP_HOST = up.hostname, UP_PORT = Number(up.port || 80);
 const log = (...a) => console.log('[proxy]', ...a);
+// Only these sites go through the paid proxy; everything else (slot CDNs, images
+// from game providers) goes straight out from the server to save proxy data.
+const ONLY = (process.env.HUBIE_PROXY_ONLY || 'housebets.com').split(',').map(s => s.trim()).filter(Boolean);
+const viaProxy = host => !ONLY.length || ONLY.some(d => host === d || host.endsWith('.' + d));
+let usedUp = 0, usedDirect = 0;
+const count = (sock, viaUp) => sock.on('data', d => { if (viaUp) usedUp += d.length; else usedDirect += d.length; });
+setInterval(() => log(`data last 10 min: proxy ${(usedUp / 1048576).toFixed(1)} MB, direct ${(usedDirect / 1048576).toFixed(1)} MB`, (usedUp = usedDirect = 0, '')), 600000);
 
 const server = http.createServer((req, res) => {          // plain http:// requests
   const headers = { ...req.headers };
   if (AUTH) headers['proxy-authorization'] = AUTH;
-  const fwd = http.request({ host: UP_HOST, port: UP_PORT, method: req.method, path: req.url, headers }, r => {
+  let host = ''; try { host = new URL(req.url).hostname; } catch {}
+  const direct = !viaProxy(host);
+  if (direct) delete headers['proxy-authorization'];
+  const opts = direct ? (() => { const u = new URL(req.url); return { host: u.hostname, port: u.port || 80, method: req.method, path: u.pathname + u.search, headers }; })()
+                      : { host: UP_HOST, port: UP_PORT, method: req.method, path: req.url, headers };
+  const fwd = http.request(opts, r => {
     res.writeHead(r.statusCode, r.headers); r.pipe(res);
   });
   fwd.on('error', e => { log('http error', e.message); res.writeHead(502); res.end(); });
@@ -25,6 +37,16 @@ const server = http.createServer((req, res) => {          // plain http:// reque
 });
 
 server.on('connect', (req, client, head) => {            // https:// tunnels
+  const [host, port] = req.url.split(':');
+  if (!viaProxy(host)) {                                  // straight out, no proxy data used
+    const d = net.connect(Number(port || 443), host, () => {
+      client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      if (head && head.length) d.write(head);
+      count(d, false); d.pipe(client); client.pipe(d);
+    });
+    d.on('error', () => { client.destroy(); }); client.on('error', () => d.destroy());
+    return;
+  }
   const s = net.connect(UP_PORT, UP_HOST, () => {
     s.write(`CONNECT ${req.url} HTTP/1.1\r\nHost: ${req.url}\r\n` +
       (AUTH ? `Proxy-Authorization: ${AUTH}\r\n` : '') + '\r\n');
@@ -42,7 +64,7 @@ server.on('connect', (req, client, head) => {            // https:// tunnels
     const rest = buf.slice(end + 4);
     if (rest.length) client.write(rest);
     if (head && head.length) s.write(head);
-    s.pipe(client); client.pipe(s);
+    count(s, true); s.pipe(client); client.pipe(s);
   });
   const kill = () => { s.destroy(); client.destroy(); };
   s.on('error', e => { log('tunnel error', req.url, e.message); kill(); });
