@@ -273,14 +273,16 @@ async function runSteps(page, st, n) {
   for (let i = 0; i < n; i++) {
     let b = null;
     if (st.step === 'safer') {                                    // Hilo: the side with the lower multiplier is more likely
+      // wait for Higher/Lower to come alive after the deal
+      for (let w = 0; w < 12 && !(await page.locator('button:visible:enabled').filter({ hasText: /higher|lower/i }).count().catch(() => 0)); w++) await sleep(500);
       await deep(page);
       const idx = await page.evaluate(() => {
-        const bs = window.__deepAll('button').filter(b => b.offsetParent && /higher|lower/i.test(b.innerText));
+        const bs = window.__deepAll('button').filter(b => (b.offsetParent || b.getClientRects().length) && !b.disabled && /higher|lower/i.test(b.innerText));
         const m = bs.map(b => parseFloat((/([\d.]+)\s*x/i.exec(b.innerText) || [])[1] || '99'));
         if (!bs.length) return -1;
         const i = m.indexOf(Math.min(...m)); bs.forEach(x => x.removeAttribute('data-hubie-pick')); bs[i].setAttribute('data-hubie-pick', '1'); return i;
       }).catch(() => -1);
-      if (idx >= 0) b = page.locator('[data-hubie-pick="1"]').first();
+      if (idx >= 0) { b = page.locator('[data-hubie-pick="1"]').first(); await sleep(rand(800, 1800)); }
     } else if (i === 0 && !(await waitBtn(page, st.step, 6000)) && !st.board) { break;
     } else if (st.board && !boardBroken && Math.random() < 0.8) {      // click the board itself, in this round's pattern
       if (await pickTiles(page, 1, pattern)) {
