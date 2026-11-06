@@ -102,6 +102,8 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (u.pathname === '/event') { director.onGameEvent(u.searchParams.get('type'), Object.fromEntries(u.searchParams)); res.writeHead(200); return res.end('ok'); }
+  if (u.pathname === '/queue/size') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ n: director.queueSize() })); }
+  if (u.pathname === '/bonus/take') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ go: director.takeBonus() })); }
   if (u.pathname === '/queue') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(director.takeQueue())); }
   if (u.pathname === '/state') { director.setGame(u.searchParams.get('game') || ''); res.writeHead(200); return res.end('ok'); }
   if (u.pathname === '/session/new') { director.newSession(); res.writeHead(200); return res.end('ok'); }

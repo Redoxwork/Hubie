@@ -4,6 +4,9 @@
 // Leaves after ~10 min or if the CPU gets too busy. Off unless SLOTS=1.
 'use strict';
 const os = require('os');
+const { detect } = require('./providers');
+const BRAIN = 'http://127.0.0.1:8090';
+const ask = p => fetch(BRAIN + p).then(r => r.json()).catch(() => ({}));
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}] slots:`, ...a);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -100,7 +103,9 @@ module.exports = function slots({ page, shared, base, tell }) {
     const href = await openSlot(page, base, name);
     if (!href) { tell('unknown', { game: name, by: by || '' }); return false; }
     if (!(await ensureFun(page))) { log('could not confirm FUN mode: leaving'); tell('slotfail', { game: name }); return false; }
-    tell('game', { game: name, by: by || '', slot: 1 });
+    const prov = detect(slotFrame(page)?.url());
+    log('provider:', prov.name, prov.bonus ? '(bonus mapped)' : '(no bonus map)');
+    tell('game', { game: name, by: by || '', slot: 1, provider: prov.name });
     const end = Date.now() + 10 * 60e3; let quiet = 0, spins = 0;
     while (Date.now() < end && !shared.blocked) {
       const batch = Math.random() < 0.5 ? 10 : 25;
@@ -119,11 +124,27 @@ module.exports = function slots({ page, shared, base, tell }) {
         const w = lastWin && lastWin.at >= t0 ? lastWin.win : null;
         tell('round', { game: name, win: w === null ? '' : (w > 0 ? 1 : 0), mult: '', slot: 1 });
         if (!(await ensureFun(page))) { log('FUN mode lost: leaving now'); return true; }   // re-check every spin
+        if ((await ask('/bonus/take')).go) await buyBonus(prov, name);                // chat voted for a bonus buy
       }
+      if ((await ask('/queue/size')).n > 0) { log('queue waiting: wrapping up', name); break; }   // finish this batch, then the queue
       await sleep(rand(2000, 4000));
     }
     log(`done with ${name} (${spins} spins)`);
     return true;
+  }
+  // bonus buy: FUN mode confirmed before and after, only on providers with a mapped button
+  async function buyBonus(prov, name) {
+    if (!prov.bonus) { tell('bonusnomap', { game: name, provider: prov.name }); return; }
+    if (!(await ensureFun(page))) { tell('bonusfail', { game: name }); return; }
+    const fr = slotFrame(page); const el = fr && await fr.frameElement().catch(() => null);
+    const box = el && await el.boundingBox().catch(() => null);
+    if (!box) { tell('bonusfail', { game: name }); return; }
+    const at = p => page.mouse.click(box.x + box.width * p.x, box.y + box.height * p.y);
+    log('bonus buy on', name, '(FUN mode)');
+    await at(prov.bonus.open); await sleep(1500);
+    if (!(await ensureFun(page))) { log('FUN mode lost during bonus: leaving'); await page.keyboard.press('Escape').catch(() => {}); return; }
+    await at(prov.bonus.confirm); await sleep(2000);
+    tell('bonus', { game: name });
   }
   return { play, favourite: () => pick(FAVOURITES) };
 };
