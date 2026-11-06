@@ -45,6 +45,22 @@
   .gamebox{position:absolute;right:2%;bottom:9%;width:min(22vw,36vh);z-index:3;display:none;background:#09161c;border:2px solid #2b6b78;
     border-radius:14px;padding:.6em .8em;font-size:clamp(10px,1.3vw,24px);color:#e6f4f5}
   .gamebox.on{display:block}
+  /* on-stream chat, under Hubie's cam */
+  .chatbox{position:absolute;right:2%;bottom:9%;width:min(22vw,36vh);z-index:3;display:flex;flex-direction:column;gap:.3em;
+    font-size:clamp(10px,1.02vw,20px);line-height:1.25;max-height:40vh;overflow:hidden;justify-content:flex-end}
+  .chatbox .m{background:#09161c;border:1px solid #1d3540;border-radius:9px;padding:.32em .55em;color:var(--text);
+    animation:chatIn .25s ease-out;overflow-wrap:anywhere}
+  .chatbox .m b{color:var(--teal);margin-right:.35em}
+  .chatbox .m.me{border-color:#6b5520}.chatbox .m.me b{color:var(--gold)}
+  .chatbox .m.out{opacity:0;transition:opacity .8s}
+  @keyframes chatIn{from{transform:translateX(18px);opacity:0}to{transform:none;opacity:1}}
+  #celebrate{position:fixed;inset:0;z-index:6;pointer-events:none}
+  .winbanner{position:fixed;left:50%;top:38%;z-index:7;transform:translate(-50%,-50%) scale(.2);opacity:0;pointer-events:none;text-align:center;
+    font-weight:900;color:#ffd35a;-webkit-text-stroke:3px #6b3f00;font-size:clamp(40px,9vw,150px);line-height:1;letter-spacing:.02em}
+  .winbanner small{display:block;font-size:.28em;-webkit-text-stroke:1.5px #6b3f00;color:#fff3c4;margin-top:.2em}
+  .winbanner.go{animation:winPop 3.2s cubic-bezier(.2,1.4,.4,1) forwards}
+  @keyframes winPop{0%{transform:translate(-50%,-50%) scale(.2) rotate(-8deg);opacity:0}12%{transform:translate(-50%,-50%) scale(1.15) rotate(3deg);opacity:1}
+    22%{transform:translate(-50%,-50%) scale(1) rotate(0)}80%{transform:translate(-50%,-50%) scale(1.04);opacity:1}100%{transform:translate(-50%,-50%) scale(.9);opacity:0}}
   .statbar{position:absolute;left:1.2%;bottom:7.5%;z-index:3;display:none;gap:.5em;font-size:clamp(9px,1vw,19px);font-weight:600}
   .statbar.on{display:flex}
   .statbar span{background:#09161c;border:1px solid #2b5562;border-radius:9px;padding:.25em .6em;color:#cfe}
@@ -115,6 +131,9 @@
   </div>
   <div class="gamebox" id="gamebox"></div>
   <div class="statbar" id="statbar"></div>
+  <div class="chatbox" id="chatbox"></div>
+  <canvas id="celebrate"></canvas>
+  <div class="winbanner" id="winbanner"></div>
   <div class="banner"><span><b>18+</b> only</span><span>Demo play, no real money</span><span>Please gamble responsibly</span></div>
 </div>
 
@@ -213,16 +232,27 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
       vx:(Math.random()-.5)*(big?15:10), vy:-Math.random()*(big?17:12)-4, r:5+Math.random()*(big?10:7),
       life:1, spin:Math.random()*6, kind:Math.random()<.6?'coin':'spark' });
   }
+  // a shiny gold coin: gradient face, darker rim, an H stamp and a moving highlight
+  function drawCoin(c, r){
+    const g = c.createRadialGradient(-r*.35,-r*.35,r*.1,0,0,r);
+    g.addColorStop(0,'#fff4c2'); g.addColorStop(.35,'#ffd35a'); g.addColorStop(.8,'#e0a12a'); g.addColorStop(1,'#a8661a');
+    c.beginPath(); c.arc(0,0,r,0,7); c.fillStyle=g; c.fill();
+    c.lineWidth=Math.max(1.5,r*.14); c.strokeStyle='#8a5412'; c.stroke();
+    c.beginPath(); c.arc(0,0,r*.68,0,7); c.lineWidth=Math.max(1,r*.07); c.strokeStyle='#c98a22'; c.stroke();
+    if (r > 9){ c.fillStyle='#a8661a'; c.font=`900 ${Math.round(r*1.05)}px system-ui,sans-serif`; c.textAlign='center'; c.textBaseline='middle'; c.fillText('H',0,r*.05); }
+  }
+  function drawSpark(c, r, tw){
+    c.fillStyle = tw > .5 ? '#ffffff' : '#fff3c4'; c.beginPath();
+    for (let k=0;k<4;k++){ c.rotate(Math.PI/2); c.lineTo(0,-r*1.7*tw); c.lineTo(r*.3,-r*.3); } c.fill();
+  }
   function drawParticles(dt){
     fctx.setTransform(1,0,0,1,0,PAD); fctx.clearRect(0,-PAD,W,H+PAD);
     for (let i=particles.length-1;i>=0;i--){
       const p = particles[i]; p.vy += .5; p.x += p.vx; p.y += p.vy; p.life -= dt/1600; p.spin += .15;
       if (p.life<=0 || p.y>H+20){ particles.splice(i,1); continue; }
       fctx.save(); fctx.globalAlpha = Math.min(1,p.life*1.5); fctx.translate(p.x,p.y);
-      if (p.kind==='coin'){ fctx.scale(Math.abs(Math.cos(p.spin)),1); fctx.beginPath(); fctx.arc(0,0,p.r,0,7);
-        fctx.fillStyle='#f2b544'; fctx.fill(); fctx.lineWidth=2; fctx.strokeStyle='#a8741d'; fctx.stroke(); }
-      else { fctx.rotate(p.spin); fctx.fillStyle='#fff3c4'; fctx.beginPath();
-        for (let k=0;k<4;k++){ fctx.rotate(Math.PI/2); fctx.lineTo(0,-p.r*1.6); fctx.lineTo(p.r*.35,-p.r*.35); } fctx.fill(); }
+      if (p.kind==='coin'){ fctx.scale(Math.max(.15,Math.abs(Math.cos(p.spin))),1); drawCoin(fctx, p.r); }
+      else { fctx.rotate(p.spin); drawSpark(fctx, p.r, .6+.4*Math.sin(p.spin*3)); }
       fctx.restore();
     }
   }
@@ -451,6 +481,44 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
     gBox.innerHTML = h; gBox.classList.add('on');
   }
   setInterval(()=>{ if (gState && gState.phase === 'open') renderGame(); }, 500);
+  // ---------- full-screen celebration for big wins ----------
+  const cel = document.getElementById('celebrate'), cctx = cel.getContext('2d'), wb = document.getElementById('winbanner');
+  const rain = []; let celOn = false;
+  function fit(){ cel.width = innerWidth; cel.height = innerHeight; } fit(); addEventListener('resize', fit);
+  function celebrate(x, game){
+    const n = x >= 1000 ? 260 : x >= 250 ? 180 : 110, Wd = cel.width;
+    for (let i=0;i<n;i++) rain.push({ x:Math.random()*Wd, y:-20-Math.random()*cel.height*.9, vx:(Math.random()-.5)*2.2, vy:2+Math.random()*4,
+      r:(x>=250?9:7)+Math.random()*(x>=250?14:10), spin:Math.random()*6, sp:.08+Math.random()*.14, kind:Math.random()<.78?'coin':'spark', life:1 });
+    wb.innerHTML = `${(Math.round(x*100)/100).toLocaleString('en-US')}x!<small>${esc(game||'')}</small>`;
+    wb.classList.remove('go'); void wb.offsetWidth; wb.classList.add('go');
+    if (!celOn){ celOn = true; requestAnimationFrame(rainLoop); }
+  }
+  let lastRain = performance.now();
+  function rainLoop(now){
+    const dt = Math.min(50, now - lastRain); lastRain = now;
+    cctx.clearRect(0,0,cel.width,cel.height);
+    for (let i=rain.length-1;i>=0;i--){
+      const p = rain[i]; p.vy += .12*dt/16; p.x += p.vx*dt/16; p.y += p.vy*dt/16; p.spin += p.sp*dt/16;
+      if (p.y > cel.height+30){ rain.splice(i,1); continue; }
+      cctx.save(); cctx.translate(p.x,p.y);
+      if (p.kind==='coin'){ cctx.scale(Math.max(.15,Math.abs(Math.cos(p.spin))),1); drawCoin(cctx,p.r); }
+      else { cctx.rotate(p.spin); drawSpark(cctx,p.r*.8,.6+.4*Math.sin(p.spin*3)); }
+      cctx.restore();
+    }
+    if (rain.length) requestAnimationFrame(rainLoop); else { celOn = false; cctx.clearRect(0,0,cel.width,cel.height); }
+  }
+  // ---------- on-stream chat box ----------
+  const chatEl = document.getElementById('chatbox');
+  function addChat(who, text, me){
+    const d = document.createElement('div'); d.className = 'm' + (me ? ' me' : '');
+    d.innerHTML = `<b>${esc(who)}</b>${esc(text)}`;
+    chatEl.appendChild(d);
+    while (chatEl.children.length > 7) chatEl.removeChild(chatEl.firstChild);
+    setTimeout(()=>{ d.classList.add('out'); setTimeout(()=>d.remove(), 900); }, me ? 30000 : 45000);
+  }
+  // keep the chat above the chat-game panel when it's open
+  setInterval(()=>{ const g = document.getElementById('gamebox'); chatEl.style.bottom = g.classList.contains('on') ? `calc(9% + ${g.offsetHeight + 10}px)` : '9%';
+    chatEl.style.maxHeight = g.classList.contains('on') ? '22vh' : '40vh'; }, 500);
   function connect(url){
     let ws; try { ws = new WebSocket(url); } catch(e){ return; }
     ws.onopen = () => { sock = ws; tell({type:'hello'}); };
@@ -463,11 +531,13 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
       if (m.type==='game') showGame(m.state);
       if (m.type==='stats') showStats(m.state);
       if (m.type==='layout') { layout = m.mode; setLayout(layout); }
+      if (m.type==='chat') addChat(m.who, m.text, m.me);
+      if (m.type==='celebrate') celebrate(Number(m.x)||0, m.game);
     };
     ws.onclose = () => { if (sock === ws) sock = null; setTimeout(()=>connect(url), 2000); };
   }
   if (params.get('ws')) connect(params.get('ws'));
-  window.hubie = { say, speakAudio, react, showCaption };
+  window.hubie = { say, speakAudio, react, showCaption, celebrate, addChat };
 
   // ---------- Demo buttons ----------
   // Official Hubie vibe (from Housebets' own Hubie chat): sleepy, dry, low energy, long pauses, zero hype.

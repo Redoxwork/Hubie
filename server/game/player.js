@@ -526,7 +526,7 @@ module.exports = function startPlayer(page, shared) {
   async function setTarget(key) {
     if (key !== 'limbo' && key !== 'dice') return true;
     const c = await getChal();
-    const want = key === c.game ? String(c.target) : key === 'limbo' ? pick(['2', '3', '5']) : null;
+    const want = key === c.game ? String(c.target) : key === 'limbo' ? pick(['2', '3', '5', '10', '10', '25', '50', '100']) : pick(['2', '2', '3', '5', '10']);
     if (!want) return true;
     const got = await setByLabel(ui, /multiplier/i, want);
     return got !== null && Number(got) === Number(want);
