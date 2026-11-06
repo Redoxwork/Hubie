@@ -59,6 +59,7 @@
   body.col .chatbox::before{content:"💬 CHAT";color:var(--teal);font-weight:700;font-size:.8em;letter-spacing:.08em;margin:0 0 .1em .2em}
   body.col .chatbox:empty::after,body.col .chatbox.quiet::after{content:"chat's quiet… say hi 👋";color:#7d9aa3;font-size:.9em;margin-left:.2em}
   body.col:has(.gamebox.on) .chatbox{max-height:15vh}
+  body.col .caption:not(.on){display:none}   /* no empty gap: chat sits right under the cam when he's not talking */
   .cmdhint{display:none}
   body.col.overlay .cmdhint{display:block;position:absolute;left:1.2%;top:81.6%;z-index:3;font-size:clamp(9px,1.05vw,20px);color:#9fb9c0;font-weight:600}
   .cmdhint b{color:var(--teal);font-weight:700}
