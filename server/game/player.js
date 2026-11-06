@@ -13,7 +13,7 @@ const NEVER = /deposit|withdraw|cashier|wallet|buy|purchase|real money|autobet|a
 
 // ---- game list (url slugs follow the dice page: /games/housegames-dice; fix here if one differs) ----
 const GAMES = {
-  dice:     { name: 'Dice',     slugs: ['dice'], auto: true, button: /^(roll|bet)$/i, weight: 4 },
+  dice:     { name: 'Dice',     slugs: ['dice'], auto: true, button: /^(roll|bet)$/i, weight: 3 },
   limbo:    { name: 'Limbo',    slugs: ['limbo'], auto: true, button: /^bet$/i, weight: 6 },
   coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], button: /^(bet|flip)$/i, weight: 2,
               prep: page => clickText(page, Math.random() < 0.5 ? /^heads$/i : /^tails$/i) },
@@ -446,15 +446,17 @@ module.exports = function startPlayer(page, shared) {
   }
   const benched = {};                                    // game -> until (keeps failing: skip it for a while)
   const bench = (k, why) => { if (k === 'dice') return; benched[k] = Date.now() + 2 * 3600e3; log(`benching ${GAMES[k].name} for 2h (${why})`); };
+  const recent = [];
   function nextGame() {
     const ok = k => !(benched[k] > Date.now());
     if (Math.random() < 0.5 && chal.game !== current && ok(chal.game)) return chal.game;             // the challenge game, half the time
-    const keys = Object.keys(GAMES).filter(k => k !== current && ok(k));
+    const keys = Object.keys(GAMES).filter(k => k !== current && ok(k) && recent.filter(r => r === k).length < 2);
     if (!keys.length) return 'dice';
     const bag = keys.flatMap(k => Array(GAMES[k].weight).fill(k));
     return pick(bag);
   }
   async function open(key, by) {
+    recent.push(key); if (recent.length > 5) recent.shift();
     current = key; until = Date.now() + rand(5, 10) * 60e3; fails = 0; openedAt = Date.now();
     log('opening', GAMES[key].name, by ? `(requested by ${by})` : '');
     for (const slug of GAMES[key].slugs) {
@@ -524,14 +526,15 @@ module.exports = function startPlayer(page, shared) {
 
   (async () => {
     log('on: playing House Originals at bet 0');
-    await open('dice');
+    current = '';
+    await open(nextGame());                         // start on a random original
     for (;;) {
       await sleep(rand(4000, 7000));
       if (shared.blocked || shared.lounge || shared.loggedOut || shared.loggingIn) { shared.lastRound = Date.now(); continue; }
       // stall watchdog: no round for 12 min -> reopen the game; 25 min -> restart the game bot
       const idle = Date.now() - (shared.lastRound || Date.now());
       if (idle > 25 * 60e3) { log('watchdog: no rounds for 25 min, restarting the game bot'); process.exit(3); }
-      if (idle > 12 * 60e3 && !shared.reopened) { shared.reopened = true; log('watchdog: no rounds for 12 min, reopening the game'); await open(current === 'dice' ? 'limbo' : 'dice'); continue; }
+      if (idle > 12 * 60e3 && !shared.reopened) { shared.reopened = true; log('watchdog: no rounds for 12 min, reopening the game'); await open(nextGame()); continue; }
       if (idle < 60e3) shared.reopened = false;
       try {
         // chat request first, then rotation
@@ -540,16 +543,16 @@ module.exports = function startPlayer(page, shared) {
         const q = !canSwitch ? null : await fetch(`${BRAIN}/queue`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null);
         const want = q && resolve(q.game);
         if (q && q.game && !want) {                                    // not an original: try it as a slot (Fun mode)
-          if (process.env.SLOTS === '1') { await slots.play(q.game, q.by); await open('dice'); }
+          if (process.env.SLOTS === '1') { await slots.play(q.game, q.by); await open(nextGame()); }
           else tell('unknown', { game: q.game, by: q.by || '' });
           continue;
         }
         if (want) { await open(want, q.by); continue; }
         if (process.env.SLOTS === '1' && Date.now() > nextSlotBreak) {  // now and then, a slot break from Hubie's list
           nextSlotBreak = Date.now() + rand(80, 110) * 60e3;
-          await slots.play(slots.favourite()); await open('dice'); continue;
+          await slots.play(slots.favourite()); await open(nextGame()); continue;
         }
-        if (Date.now() > until) { await getChal(); await open(current === 'dice' || Math.random() < 0.35 ? nextGame() : 'dice'); continue; }
+        if (Date.now() > until) { await getChal(); await open(nextGame()); continue; }
         if (!/\/games\//.test(page.url())) { await open(current); continue; }
 
         const g = GAMES[current];
@@ -565,7 +568,7 @@ module.exports = function startPlayer(page, shared) {
           if (fails === 4 && !diagDone[current]) { diagDone[current] = 1; log('bet box not found on', g.name, '- details below'); await diag(page); }
           if (fails >= 8) {                                             // give up on this game for a while, quietly
             log('bet box not confirmed at 0 on', g.name, '- moving on');
-            if (current !== 'dice') { bench(current, 'bet box'); await open('dice'); }
+            if (current !== 'dice') { bench(current, 'bet box'); await open(nextGame()); }
             else { await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); fails = 0; await sleep(20000); }
           }
           continue;
