@@ -13,16 +13,16 @@ const NEVER = /deposit|withdraw|cashier|wallet|buy|purchase|real money|autobet|a
 
 // ---- game list (url slugs follow the dice page: /games/housegames-dice; fix here if one differs) ----
 const GAMES = {
-  dice:     { name: 'Dice',     slug: 'dice',     button: /^(roll|bet)$/i, weight: 4 },
-  limbo:    { name: 'Limbo',    slug: 'limbo',    button: /^bet$/i, weight: 2,
+  dice:     { name: 'Dice',     slug: 'dice', auto: true,     button: /^(roll|bet)$/i, weight: 4 },
+  limbo:    { name: 'Limbo',    slug: 'limbo', auto: true,    button: /^bet$/i, weight: 2,
               prep: page => setNumber(page, /target|multiplier/i, pick(['2', '3', '5', '10'])) },
   coinflip: { name: 'Coinflip', slug: 'coinflip', button: /^(bet|flip)$/i, weight: 2,
               prep: page => clickText(page, Math.random() < 0.5 ? /^heads$/i : /^tails$/i) },
-  plinko:   { name: 'Plinko',   slug: 'plinko',   button: /^(bet|drop)$/i, weight: 2 },
-  wheel:    { name: 'Wheel',    slug: 'wheel',    button: /^(bet|spin)$/i, weight: 1 },
-  keno:     { name: 'Keno',     slug: 'keno',     button: /^bet$/i, weight: 1,
+  plinko:   { name: 'Plinko',   slug: 'plinko', auto: true,   button: /^(bet|drop)$/i, weight: 2 },
+  wheel:    { name: 'Wheel',    slug: 'wheel', auto: true,    button: /^(bet|spin)$/i, weight: 1 },
+  keno:     { name: 'Keno',     slug: 'keno', auto: true,     button: /^bet$/i, weight: 1,
               prep: page => clickText(page, /^(auto ?pick|random)$/i) },
-  maxwin:   { name: 'Max Win',  slug: 'maxwin',   button: /^(bet|spin)$/i, weight: 1 },
+  maxwin:   { name: 'Max Win',  slug: 'maxwin', auto: true,   button: /^(bet|spin)$/i, weight: 1 },
 };
 const ALIASES = { coin: 'coinflip', 'coin flip': 'coinflip', 'max win': 'maxwin', max: 'maxwin', plink: 'plinko' };
 function resolve(n) {
@@ -71,8 +71,27 @@ async function playButton(page, re) {
   return null;
 }
 
+// set a number box by its label (smallest container wins), never the Bet Amount box
+async function setByLabel(page, labelRe, value) {
+  const ok = await page.evaluate(({ src }) => {
+    const re = new RegExp(src, 'i'); let best = null, bestDepth = 99;
+    for (const inp of document.querySelectorAll('input')) {
+      if (!inp.offsetParent || inp.hasAttribute('data-hubie-bet')) continue;
+      let p = inp; for (let d = 0; d < 5 && p; d++, p = p.parentElement) if (re.test(p.innerText || '')) { if (d < bestDepth) { best = inp; bestDepth = d; } break; }
+    }
+    document.querySelectorAll('[data-hubie-n]').forEach(e => e.removeAttribute('data-hubie-n'));
+    if (best) best.setAttribute('data-hubie-n', '1');
+    return !!best;
+  }, { src: labelRe.source }).catch(() => false);
+  if (!ok) return null;
+  const el = page.locator('[data-hubie-n="1"]').first();
+  await el.fill(String(value)).catch(() => {});
+  return el.inputValue().catch(() => null);
+}
+const readBet = page => page.locator('[data-hubie-bet="1"]').first().inputValue().catch(() => null);
+
 // ---- round results: read from the game's own network replies (logged once so we can tune) ----
-let lastJson = null, keysLogged = 0;
+let lastJson = null, keysLogged = 0, onAutoResult = null;
 function findResult(o) {
   let mult = null, win = null;
   (function walk(x, d) {
@@ -91,7 +110,7 @@ function sniff(page) {
     try {
       if (!/housebets/.test(r.url()) || !/json/.test(r.headers()['content-type'] || '')) return;
       const j = await r.json(); const res = findResult(j);
-      if (res) { lastJson = { at: Date.now(), ...res }; if (keysLogged < 3) { keysLogged++; log('result keys from', r.url().split('?')[0].slice(-40), Object.keys(j).slice(0, 12).join(',')); } }
+      if (res) { lastJson = { at: Date.now(), ...res }; if (onAutoResult) onAutoResult(res); if (keysLogged < 3) { keysLogged++; log('result keys from', r.url().split('?')[0].slice(-40), Object.keys(j).slice(0, 12).join(',')); } }
     } catch {}
   });
 }
@@ -114,6 +133,35 @@ module.exports = function startPlayer(page, shared) {
     await clickText(page, /^manual$/i);
     tell('game', { game: GAMES[key].name, by: by || '' });
   }
+  // Autobet batch: 10-25 bets, bet box must stay 0 the whole time, stops early if anything looks wrong
+  async function autoBatch(g) {
+    const n = Math.floor(rand(10, 26));
+    await clickText(page, /^auto$/i); await sleep(800);
+    if (!(await zeroBet(page))) { log('auto: bet box not 0, skipping'); await clickText(page, /^manual$/i); return false; }
+    const set = await setByLabel(page, /number of bets/i, n);
+    if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(page, /^manual$/i); return false; }
+    if (!(await zeroBet(page))) { await clickText(page, /^manual$/i); return false; }
+    const start = page.locator('button').filter({ hasText: /^\s*start autobet/i }).first();
+    if (!(await start.isVisible().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(page, /^manual$/i); return false; }
+    let got = 0;
+    onAutoResult = res => { got++; rounds++; tell('round', { game: g.name, win: res.win ? 1 : 0, mult: res.mult }); };
+    tell('auto', { game: g.name, n });
+    log(`auto: ${n} bets on ${g.name} at 0`);
+    await start.click();
+    const stop = page.locator('button').filter({ hasText: /stop autobet/i }).first();
+    const t0 = Date.now();
+    while (Date.now() - t0 < n * 4000 + 20000) {
+      await sleep(1000);
+      const v = await readBet(page);
+      if (v !== null && parseFloat(v || '0') !== 0) { log('auto: BET BOX NOT 0, stopping now'); await stop.click().catch(() => {}); break; }
+      if (shared.blocked || got >= n || !(await stop.isVisible().catch(() => false))) break;
+    }
+    if (await stop.isVisible().catch(() => false)) await stop.click().catch(() => {});
+    onAutoResult = null;
+    await sleep(1000); await clickText(page, /^manual$/i);
+    return true;
+  }
+
   (async () => {
     log('on: playing House Originals at bet 0');
     await open('dice');
@@ -132,6 +180,7 @@ module.exports = function startPlayer(page, shared) {
         const g = GAMES[current];
         if (await page.getByRole('button', { name: /^log ?in$/i }).first().isVisible().catch(() => false)) { if (++fails % 10 === 1) log('not logged in: waiting'); continue; }
         if (!(await zeroBet(page))) { if (++fails >= 3) { log('bet box not confirmed at 0: skipping', g.name); await open('dice'); } continue; }
+        if (g.auto && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.3)) { await autoBatch(g); fails = 0; continue; }
         if (g.prep) await g.prep(page);
         if (!(await zeroBet(page))) continue;                         // check again right before the click
         const b = await playButton(page, g.button);
