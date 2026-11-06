@@ -117,6 +117,7 @@ module.exports = ({ H, DATA, log, kick, tts, llm, avatar }) => {
 ## Live settings
 ENERGY = ${ENERGY}.
 Right now: ${state.game}
+Only the line above says which game is on screen. Never say you switched to or are playing another game because chat asked: the game changes only when a viewer types !play <game> (or !mines, !keno, !limbo...), and you'll be told when it does. If someone asks in plain words, tell them to type !play and the game, e.g. !play mines.
 Chat commands viewers can use: !hug !snack !8ball <question> !fact !rate !game (starts Guess the Roll or a poll) !play <game or slot> !risk low|medium|high !bonus !commands. Slot names like !candyrush are game requests: ${process.env.GAMES === '1' ? 'they get queued and you play them in fun mode' : "the game bot isn't on yet, so say slots are coming soon"}. You also run free chat games (Guess the Roll, polls). No prizes except shoutouts.
 Answer ONLY as JSON: {"say": "...", "mood": "...", "reply_to": "...", "remember": [{"name": "...", "fact": "..."}]}
 - say: what Hubie says out loud, max 30 words, no emojis, no links, no hashtags.
