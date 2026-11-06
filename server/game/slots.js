@@ -59,6 +59,32 @@ async function openSlot(page, base, name) {
   return href;
 }
 
+// ---- the settings gear (icon only, no text): try the toolbar's icon buttons, never the last one (fullscreen) ----
+const funVisible = page => page.locator('button, [role=tab], [role=radio], label').filter({ hasText: /^\s*fun\s*$/i }).first().isVisible().catch(() => false);
+async function openGear(page) {
+  const named = page.locator('button[aria-label*="setting" i], button[title*="setting" i]').first();
+  if (await named.isVisible().catch(() => false)) { await named.click({ timeout: 3000 }).catch(() => {}); await sleep(1000); if (await funVisible(page)) return true; }
+  const n = await page.evaluate(() => {
+    document.querySelectorAll('[data-hubie-tool]').forEach(e => e.removeAttribute('data-hubie-tool'));
+    const blocks = [...document.querySelectorAll('div,section,header,nav')].filter(d => d.offsetParent && /housebets/i.test(d.innerText || '') && (d.innerText || '').length < 60);
+    blocks.sort((a, b) => a.innerText.length - b.innerText.length);
+    for (const b of blocks) {
+      const icons = [...b.querySelectorAll('button,[role=button]')].filter(x => x.offsetParent && !(x.innerText || '').trim() && x.querySelector('svg,img'));
+      if (icons.length >= 2) { icons.slice(0, -1).forEach((x, i) => x.setAttribute('data-hubie-tool', String(i))); return icons.length - 1; }
+    }
+    return 0;
+  }).catch(() => 0);
+  for (let i = 0; i < n && i < 4; i++) {
+    await page.locator(`[data-hubie-tool="${i}"]`).first().click({ timeout: 3000 }).catch(() => {});
+    await sleep(900);
+    if (await funVisible(page)) return true;
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(400);
+  }
+  log('settings gear not found');
+  return false;
+}
+
 // ---- Fun mode: click it, then confirm it's the selected one ----
 async function ensureFun(page) {
   const funSelected = () => page.evaluate(() => {
@@ -77,11 +103,8 @@ async function ensureFun(page) {
   }).catch(() => null);
   let s = await funSelected();
   if (s === true) return true;
-  // open the game settings (gear) if the switch isn't visible, then click "Fun"
-  if (s === null) {
-    const gear = page.locator('button[aria-label*="setting" i], [role=button][aria-label*="setting" i], button[title*="setting" i]').first();
-    if (await gear.isVisible().catch(() => false)) { await gear.click({ timeout: 3000 }).catch(() => {}); await sleep(1000); }
-  }
+  // open the game settings: the gear is an icon-only button in the toolbar under the slot (📊 ⚙️ ☆ Housebets ⛶)
+  if (s === null && !(await funVisible(page))) await openGear(page);
   const fun = page.locator('button, [role=tab], [role=radio], label').filter({ hasText: /^\s*fun\s*$/i }).first();
   if (await fun.isVisible().catch(() => false)) { await fun.click({ timeout: 3000 }).catch(() => {}); await sleep(4000); }
   s = await funSelected();
@@ -124,7 +147,9 @@ module.exports = function slots({ page, shared, base, tell }) {
     const href = await deadline(openSlot(page, base, name), 90e3);
     if (!href) { tell('unknown', { game: name, by: by || '' }); return false; }
     if (!(await deadline(ensureFun(page), 30e3))) { log('could not confirm FUN mode: leaving'); tell('slotfail', { game: name }); return false; }
-    const prov = detect(slotFrame(page)?.url());
+    const cardText = await page.evaluate(() => (document.body.innerText || '').slice(0, 6000)).catch(() => '');
+    let prov = detect(slotFrame(page)?.url());
+    if (prov.id === 'unknown') { const { PROVIDERS } = require('./providers'); prov = PROVIDERS.find(p => p.match.test(cardText)) || prov; }
     log('provider:', prov.name, prov.bonus ? '(bonus mapped)' : '(no bonus map)');
     tell('game', { game: name, by: by || '', slot: 1, provider: prov.name });
     const mins = Number(process.env.SLOT_MINUTES) || 5;     // a slot session: 5 min by default (house games come first)
