@@ -24,6 +24,8 @@ const GAMES = {
   keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 5,
               prep: page => clickText(page, /^(auto ?pick|random( pick)?)$/i) },
   maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
+  crash:    { name: 'Crash',    slugs: ['crash'], button: /^\s*(bet|place bet|bet \(next round\)|join)\s*$/i, weight: 2, crash: true,
+              prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out/i, pick(['1.5', '2', '2', '3', '5', '10'])) },
   // games with steps inside a round: start, take a few steps, cash out
   road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'road'], button: /^(bet|play|start)$/i, weight: 3,
               steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 1, max: 3, cap: 8, cash: /^cash ?out/i } },
@@ -287,7 +289,7 @@ const anyVisible = (ui, re) => ui.locator('button:visible').filter({ hasText: re
 async function runSteps(page, st, n) {
   await sleep(1500);
   await deep(page); await page.evaluate(() => window.__deepAll('[data-hubie-done]').forEach(e => e.removeAttribute('data-hubie-done'))).catch(() => {});
-  const pattern = pick(PATTERNS);
+  const pattern = pick(PATTERNS); let skips = 0;
   let done = 0;
   for (let i = 0; i < n; i++) {
     let b = null;
@@ -301,7 +303,15 @@ async function runSteps(page, st, n) {
         if (!bs.length) return -1;
         const i = m.indexOf(Math.min(...m)); bs.forEach(x => x.removeAttribute('data-hubie-pick')); bs[i].setAttribute('data-hubie-pick', '1'); return i;
       }).catch(() => -1);
-      if (idx >= 0) { b = page.locator('[data-hubie-pick="1"]').first(); await sleep(rand(800, 1800)); }
+      if (idx >= 0) {
+        const mults = await page.locator('button:visible').filter({ hasText: /higher|lower/i }).allInnerTexts().catch(() => []);
+        const ms = mults.map(t => parseFloat((/([\d.]+)\s*x/i.exec(t) || [])[1] || '0')).filter(Boolean);
+        if (ms.length === 2 && Math.min(...ms) > 1.75 && skips < 2 && Math.random() < 0.5) { skips++;     // a middle card: skip it
+          const skip = page.locator('button:visible[aria-label*="skip" i], button:visible[title*="skip" i]').first();
+          if (await skip.count().catch(() => 0)) { await sleep(rand(600, 1200)); await skip.click({ timeout: 3000 }).catch(() => {}); await sleep(1500); i--; continue; }
+        }
+        b = page.locator('[data-hubie-pick="1"]').first(); await sleep(rand(800, 1800));
+      }
     } else if (i === 0 && !(await waitBtn(page, st.step, 6000)) && !st.board) { break;
     } else if (st.board && !boardBroken && Math.random() < 0.8) {      // click the board itself, in this round's pattern
       if (await pickTiles(page, 1, pattern)) {
@@ -624,10 +634,11 @@ module.exports = function startPlayer(page, shared) {
         if (g.prep) await g.prep(ui);
         if (!(await zeroBet(ui))) continue;                         // check again right before the click
         const b = await playButton(ui, g.button);
-        if (!b) { if (await anyVisible(ui, /^\s*(hit|stand|cash ?out|random( tile| pick)?|higher|lower)\b/i)) { await sleep(2000); continue; }
+        if (!b) { if (await anyVisible(ui, /^\s*(hit|stand|cash ?out|random( tile| pick)?|higher|lower|waiting|starting)\b/i)) { await sleep(2000); continue; }
           if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
         if (g.bj) await playBlackjack(ui, tell);
+        if (g.crash) { for (let w = 0; w < 60 && !(await playButton(ui, g.button)); w++) await sleep(1000); }
         if (g.steps) {                                                  // steps go up after a win, down after a bust
           const st = g.steps; level[current] = level[current] || st.min;
           const cap = st.cap || st.max, spread = pick([-2, -1, -1, 0, 0, 0, 1, 1, 2, 3]);
