@@ -26,11 +26,11 @@ const GAMES = {
               prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out|cashout/i, pick(['1.5', '2', '3'])) },
   // games with steps inside a round: start, take a few steps, cash out
   road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'road'], button: /^(bet|play|start)$/i, weight: 3,
-              steps: { step: /^go$/i, min: 1, max: 3, cap: 8, cash: /^cash ?out/i } },
+              steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 1, max: 3, cap: 8, cash: /^cash ?out/i } },
   tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2, risk: ['easy', 'medium', 'hard'],
-              steps: { step: /^random ?pick$/i, min: 1, max: 3, cap: 7, cash: /^cash ?out/i } },
+              steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 3, cap: 7, cash: /^cash ?out/i } },
   mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, 1 + Math.floor(Math.random() * 3)), button: /^(bet|play)$/i, weight: 5, mines: [1, 2, 3, 5],
-              steps: { step: /^(random ?pick|pick random( tile)?)$/i, min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
+              steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
               steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
   blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^(bet|deal)$/i, weight: 1,
@@ -174,19 +174,33 @@ async function autoDiag(ui) {
   const btns = await ui.evaluate(() => window.__deepAll('button').filter(b => b.offsetParent || b.getClientRects().length).map(b => (b.innerText || '').trim()).filter(Boolean).slice(0, 25).join(' | ')).catch(() => '');
   log('auto panel (one time):\n   ' + rows.join('\n   ') + '\n   buttons: ' + btns);
 }
+// click n random hidden tiles on a game board (Mines, Dragon Tower...): the biggest group of
+// same-size, label-less, clickable squares on screen. Never anything with text on it.
 async function pickTiles(ui, n) {
   await deep(ui);
   const ok = await ui.evaluate(n => {
-    // the board: a box with 25 similar clickable children
-    const boards = window.__deepAll('div').filter(d => d.children.length === 25 && [...d.children].every(c => c.offsetParent || c.getClientRects().length));
-    const b = boards[0]; if (!b) return false;
-    const tiles = [...b.children]; const picks = new Set();
-    while (picks.size < n) picks.add(Math.floor(Math.random() * 25));
-    for (const i of picks) { const t = tiles[i].querySelector('button') || tiles[i]; t.click(); }
-    return true;
-  }, n).catch(() => false);
-  if (!ok) await clickText(ui, /^(random ?pick|pick random( tile)?)$/i);
-  await sleep(500);
+    const D = window.__deepAll;
+    const cands = D('button, [role=button], div, span').filter(e => {
+      const r = e.getBoundingClientRect();
+      if (r.width < 30 || r.height < 30 || r.width > 220 || Math.abs(r.width - r.height) > r.width * 0.45) return false;
+      if ((e.innerText || '').trim()) return false;                              // tiles have no text
+      const st = getComputedStyle(e);
+      if (st.visibility === 'hidden' || st.display === 'none' || st.pointerEvents === 'none') return false;
+      return e.tagName === 'BUTTON' || e.getAttribute('role') === 'button' || st.cursor === 'pointer';
+    });
+    // group by size, keep the biggest group (the board)
+    const groups = {};
+    for (const e of cands) { const r = e.getBoundingClientRect(); const k = Math.round(r.width / 4) + 'x' + Math.round(r.height / 4); (groups[k] = groups[k] || []).push(e); }
+    let board = Object.values(groups).sort((a, b) => b.length - a.length)[0] || [];
+    board = board.filter(e => !board.some(o => o !== e && o.contains(e)));          // outermost only
+    if (board.length < 4) return 0;
+    const picks = new Set(); while (picks.size < Math.min(n, board.length)) picks.add(Math.floor(Math.random() * board.length));
+    for (const i of picks) board[i].click();
+    return board.length;
+  }, n).catch(() => 0);
+  if (!ok) await clickText(ui, /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i);
+  await sleep(600);
+  return ok;
 }
 async function playButton(page, re) {
   const all = page.locator('button');
@@ -235,7 +249,12 @@ async function runSteps(page, st, n) {
       }).catch(() => -1);
       if (idx >= 0) b = page.locator('[data-hubie-pick="1"]').first();
     } else b = await playButton(page, st.step);
-    if (!b || !(await b.isVisible().catch(() => false))) break;    // round already over (busted or finished)
+    if (!b || !(await b.isVisible().catch(() => false))) {
+      if (st.step !== 'safer' && (await playButton(page, st.cash || /^$/))) {    // round still on: click a tile on the board
+        if (await pickTiles(page, 1)) { done++; await sleep(rand(1200, 2200)); continue; }
+      }
+      break;                                                          // round already over (busted or finished)
+    }
     await b.click({ timeout: 3000 }).catch(() => {});
     done++;
     await sleep(rand(1200, 2200));
@@ -418,6 +437,10 @@ module.exports = function startPlayer(page, shared) {
 
         const g = GAMES[current];
         if (await autoRunning(ui)) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(2000); continue; }
+        if (g.steps && g.steps.cash && await playButton(ui, g.steps.cash)) {   // a round left open: one step, then cash out
+          log('finishing an open round on', g.name);
+          await runSteps(ui, g.steps, 1); shared.lastRound = Date.now(); continue;
+        }
         if (await page.getByRole('button', { name: /^log ?in$/i }).first().isVisible().catch(() => false)) { if (++fails % 10 === 1) log('not logged in: waiting'); continue; }
         if (!(await zeroBet(ui))) {
           fails++;
