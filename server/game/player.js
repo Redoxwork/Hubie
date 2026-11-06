@@ -576,9 +576,9 @@ module.exports = function startPlayer(page, shared) {
     const used = new Set();
     for (const [key, g] of Object.entries(GAMES)) {
       const names = [g.name, ...g.slugs].map(norm).filter(n => n.length > 2);
-      const cands = links.filter(l => /\/(games?|casino|originals?)\//.test(l.href) && !used.has(l.href.split('?')[0]));
+      const cands = links.filter(l => /\/(games?|casino|originals?)\//.test(l.href) && !used.has(l.href.split('?')[0]) && !/evolution|pragmatic|ezugi|playtech|hacksaw|nolimit|relax|push-gaming|bgaming|spribe|live|crazy/i.test(l.href.split('/').pop()));   // Originals only, never provider/live games
       const bySlug = cands.find(l => /housegames-/i.test(l.href) && names.some(n => norm(l.href.split('/').pop()).includes(n)))
-        || cands.find(l => names.some(n => norm(l.href.split('/').pop()) === n || norm(l.href.split('/').pop()).endsWith(n)));
+        || cands.find(l => names.some(n => norm(l.href.split('/').pop()) === n ));
       const byText = cands.find(l => norm(l.text).length < 30 && names.some(n => norm(l.text) === n || norm(l.text).startsWith(n)));
       const hit = bySlug || byText;
       if (hit) { gameUrls[key] = hit.href.split('?')[0]; used.add(gameUrls[key]); }
