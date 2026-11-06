@@ -52,7 +52,8 @@ relay_proxy(){
 }
 start_game(){
   # the profile is kept between restarts so the Housebets login + cookies survive
-  DISPLAY=:99 nice -n 5 "${CH[@]}" "${GPROXY[@]}" --force-prefers-reduced-motion --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
+  local CHG=("${CH[@]/--force-device-scale-factor=1/--force-device-scale-factor=${GAME_SCALE:-0.8}}")   # zoomed out a bit so tall games (Plinko) fit
+  DISPLAY=:99 nice -n 5 "${CHG[@]}" "${GPROXY[@]}" --force-prefers-reduced-motion --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
 }
 brain_up(){ curl -fs --max-time 3 http://127.0.0.1:8090/health >/dev/null; }
 start_avatar(){
