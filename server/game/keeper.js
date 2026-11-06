@@ -53,6 +53,9 @@ async function visibleLogin(page) {
   return null;
 }
 async function login(page) {
+  try { return await loginInner(page); } catch (e) { log('login error', e.message); } finally { shared.loggingIn = false; }
+}
+async function loginInner(page) {
   if (!process.env.HB_EMAIL || !process.env.HB_PASSWORD) { log('logged out, but no Housebets login saved (hubie secrets)'); return; }
   if (Date.now() - lastLogin < 10 * 60e3) return;           // at most one try every 10 minutes
   lastLogin = Date.now();

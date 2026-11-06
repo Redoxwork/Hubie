@@ -22,15 +22,13 @@ const GAMES = {
   keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 5,
               prep: page => clickText(page, /^(auto ?pick|random( pick)?)$/i) },
   maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
-  crash:    { name: 'Crash',    slugs: ['crash'], button: /^bet$/i, weight: 2,
-              prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out|cashout/i, pick(['1.5', '2', '3'])) },
   // games with steps inside a round: start, take a few steps, cash out
   road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'road'], button: /^(bet|play|start)$/i, weight: 3,
               steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 1, max: 3, cap: 8, cash: /^cash ?out/i } },
   tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2, risk: ['easy', 'medium', 'hard'],
-              steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 3, cap: 7, cash: /^cash ?out/i } },
-  mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, 1 + Math.floor(Math.random() * 3)), button: /^(bet|play)$/i, weight: 5, mines: [1, 2, 3, 5],
-              steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
+              steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 4, cap: 8, cash: /^cash ?out/i } },
+  mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, pick([1, 2, 2, 3, 3, 4, 5, 6])), button: /^(bet|play)$/i, weight: 5, mines: [1, 2, 3, 3, 4, 5, 8],
+              steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 3, cap: 10, cash: /^cash ?out/i, board: true } },
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
               steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
   blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^(bet|deal)$/i, weight: 1,
@@ -176,9 +174,11 @@ async function autoDiag(ui) {
 }
 // click n random hidden tiles on a game board (Mines, Dragon Tower...): the biggest group of
 // same-size, label-less, clickable squares on screen. Never anything with text on it.
-async function pickTiles(ui, n) {
+const PATTERNS = ['random', 'random', 'corners', 'diagonal', 'row', 'column', 'cluster', 'edge', 'center', 'zigzag'];
+async function pickTiles(ui, n, pattern) {
+  pattern = pattern || pick(PATTERNS);
   await deep(ui);
-  const ok = await ui.evaluate(n => {
+  const ok = await ui.evaluate(({ n, pattern }) => {
     const D = window.__deepAll;
     const cands = D('button, [role=button], div, span').filter(e => {
       const r = e.getBoundingClientRect();
@@ -194,10 +194,33 @@ async function pickTiles(ui, n) {
     let board = Object.values(groups).sort((a, b) => b.length - a.length)[0] || [];
     board = board.filter(e => !board.some(o => o !== e && o.contains(e)));          // outermost only
     if (board.length < 4) return 0;
-    const picks = new Set(); while (picks.size < Math.min(n, board.length)) picks.add(Math.floor(Math.random() * board.length));
-    for (const i of picks) board[i].click();
+    // lay the tiles out as a grid (rows/cols by position)
+    const pos = board.map(e => { const r = e.getBoundingClientRect(); return { e, x: r.left, y: r.top }; });
+    const uniq = (v, tol) => v.sort((a, b) => a - b).filter((x, i, a) => !i || x - a[i - 1] > tol);
+    const w = board[0].getBoundingClientRect().width / 2;
+    const xs = uniq(pos.map(p => p.x), w), ys = uniq(pos.map(p => p.y), w);
+    for (const p of pos) { p.c = xs.findIndex(x => Math.abs(x - p.x) <= w); p.r = ys.findIndex(y => Math.abs(y - p.y) <= w); }
+    const R = ys.length, C = xs.length, at = (r, c) => pos.find(p => p.r === r && p.c === c);
+    const rnd = k => Math.floor(Math.random() * k);
+    let order = [];
+    const r0 = rnd(R), c0 = rnd(C);
+    if (pattern === 'corners') order = [at(0, 0), at(0, C - 1), at(R - 1, 0), at(R - 1, C - 1)];
+    else if (pattern === 'diagonal') order = Array.from({ length: Math.min(R, C) }, (_, i) => Math.random() < .5 ? at(i, i) : at(i, C - 1 - i));
+    else if (pattern === 'row') order = Array.from({ length: C }, (_, c) => at(r0, c));
+    else if (pattern === 'column') order = Array.from({ length: R }, (_, r) => at(r, c0));
+    else if (pattern === 'edge') order = pos.filter(p => p.r === 0 || p.c === 0 || p.r === R - 1 || p.c === C - 1);
+    else if (pattern === 'center') order = pos.slice().sort((a, b) => (Math.abs(a.r - (R - 1) / 2) + Math.abs(a.c - (C - 1) / 2)) - (Math.abs(b.r - (R - 1) / 2) + Math.abs(b.c - (C - 1) / 2)));
+    else if (pattern === 'cluster') order = pos.slice().sort((a, b) => (Math.abs(a.r - r0) + Math.abs(a.c - c0)) - (Math.abs(b.r - r0) + Math.abs(b.c - c0)));
+    else if (pattern === 'zigzag') order = pos.slice().sort((a, b) => a.r - b.r || (a.r % 2 ? b.c - a.c : a.c - b.c)).filter((_, i) => i % 2 === 0);
+    order = order.filter(Boolean);
+    if (pattern !== 'center' && pattern !== 'cluster' && pattern !== 'zigzag') order.sort(() => Math.random() - 0.5);
+    for (const p of pos.slice().sort(() => Math.random() - 0.5)) if (!order.includes(p)) order.push(p);   // top up with random ones
+    // skip tiles already opened (they change look/disable after a click)
+    const fresh = order.filter(p => !p.e.disabled && p.e.getAttribute('aria-disabled') !== 'true' && !p.e.hasAttribute('data-hubie-done'));
+    let k = 0;
+    for (const p of fresh) { if (k >= n) break; p.e.setAttribute('data-hubie-done', '1'); p.e.click(); k++; }
     return board.length;
-  }, n).catch(() => 0);
+  }, { n, pattern }).catch(() => 0);
   if (!ok) await clickText(ui, /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i);
   await sleep(600);
   return ok;
@@ -237,6 +260,8 @@ const readBet = page => page.locator('[data-hubie-bet="1"]').first().inputValue(
 // games with steps inside a round (Road, Tower, Mines, Hilo, Blackjack)
 async function runSteps(page, st, n) {
   await sleep(1500);
+  await deep(page); await page.evaluate(() => window.__deepAll('[data-hubie-done]').forEach(e => e.removeAttribute('data-hubie-done'))).catch(() => {});
+  const pattern = pick(PATTERNS);
   let done = 0;
   for (let i = 0; i < n; i++) {
     let b = null;
@@ -248,10 +273,13 @@ async function runSteps(page, st, n) {
         const i = m.indexOf(Math.min(...m)); bs.forEach(x => x.removeAttribute('data-hubie-pick')); bs[i].setAttribute('data-hubie-pick', '1'); return i;
       }).catch(() => -1);
       if (idx >= 0) b = page.locator('[data-hubie-pick="1"]').first();
+    } else if (st.board && Math.random() < 0.8) {                     // click the board itself, in this round's pattern
+      if (await pickTiles(page, 1, pattern)) { done++; await sleep(rand(900, 1800)); if (!(await playButton(page, st.cash))) break; continue; }
+      b = await playButton(page, st.step);
     } else b = await playButton(page, st.step);
     if (!b || !(await b.isVisible().catch(() => false))) {
       if (st.step !== 'safer' && (await playButton(page, st.cash || /^$/))) {    // round still on: click a tile on the board
-        if (await pickTiles(page, 1)) { done++; await sleep(rand(1200, 2200)); continue; }
+        if (await pickTiles(page, 1, pattern)) { done++; await sleep(rand(900, 1800)); continue; }
       }
       break;                                                          // round already over (busted or finished)
     }
@@ -329,9 +357,13 @@ module.exports = function startPlayer(page, shared) {
     const got = await setByLabel(ui, /multiplier/i, want);
     return got !== null && Number(got) === Number(want);
   }
+  const benched = {};                                    // game -> until (keeps failing: skip it for a while)
+  const bench = (k, why) => { if (k === 'dice') return; benched[k] = Date.now() + 2 * 3600e3; log(`benching ${GAMES[k].name} for 2h (${why})`); };
   function nextGame() {
-    if (Math.random() < 0.5 && chal.game !== current) return chal.game;             // the challenge game, half the time
-    const keys = Object.keys(GAMES).filter(k => k !== current);
+    const ok = k => !(benched[k] > Date.now());
+    if (Math.random() < 0.5 && chal.game !== current && ok(chal.game)) return chal.game;             // the challenge game, half the time
+    const keys = Object.keys(GAMES).filter(k => k !== current && ok(k));
+    if (!keys.length) return 'dice';
     const bag = keys.flatMap(k => Array(GAMES[k].weight).fill(k));
     return pick(bag);
   }
@@ -388,6 +420,7 @@ module.exports = function startPlayer(page, shared) {
       if (v !== null && v !== '' && parseFloat(v) !== 0) { log('auto: BET BOX NOT 0, stopping now'); why = 'safety'; break; }
       if (shared.blocked) { why = 'blocked'; break; }
       if (got >= n) break;
+      if (await autoRunning(ui)) shared.lastRound = Date.now();          // visibly running = alive (even if results can't be read)
       // finished: no results for a while and no stop button
       if (Date.now() - lastRes > 10e3 && !(await autoRunning(ui))) break;
       if (Date.now() - lastLog > 60e3) { lastLog = Date.now(); log(`auto: ${got}/${n} on ${g.name}`); }
@@ -448,7 +481,7 @@ module.exports = function startPlayer(page, shared) {
           if (fails === 4 && !diagDone[current]) { diagDone[current] = 1; log('bet box not found on', g.name, '- details below'); await diag(page); }
           if (fails >= 8) {                                             // give up on this game for a while, quietly
             log('bet box not confirmed at 0 on', g.name, '- moving on');
-            if (current !== 'dice') await open('dice');
+            if (current !== 'dice') { bench(current, 'bet box'); await open('dice'); }
             else { await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); fails = 0; await sleep(20000); }
           }
           continue;
@@ -458,11 +491,12 @@ module.exports = function startPlayer(page, shared) {
         if (g.prep) await g.prep(ui);
         if (!(await zeroBet(ui))) continue;                         // check again right before the click
         const b = await playButton(ui, g.button);
-        if (!b) { if (++fails >= 5) { log('no play button on', g.name); await open(nextGame()); } continue; }
+        if (!b) { if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
         if (g.steps) {                                                  // steps go up after a win, down after a bust
           const st = g.steps; level[current] = level[current] || st.min;
-          const r = await runSteps(ui, st, level[current]);
+          const cap = st.cap || st.max, spread = pick([-2, -1, -1, 0, 0, 0, 1, 1, 2, 3]);
+          const r = await runSteps(ui, st, Math.max(st.min, Math.min(cap, level[current] + spread)));
           if (r.survived === true) level[current] = Math.min(st.cap || st.max, level[current] + 1);
           else if (r.survived === false) level[current] = Math.max(st.min, level[current] - 1);
           if (r.survived && r.done > (bestLevel[current] || 0)) { bestLevel[current] = r.done; if (r.done >= 3) tell('steps', { game: g.name, steps: r.done }); }
