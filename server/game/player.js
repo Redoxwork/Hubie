@@ -31,8 +31,7 @@ const GAMES = {
               steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 3, cap: 10, cash: /^cash ?out/i, board: true } },
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
               steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
-  blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^(bet|deal)$/i, weight: 1,
-              steps: { step: /^stand$/i, min: 1, max: 1, cash: null } },
+  blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^(bet|deal)$/i, weight: 2, bj: true },
   baccarat: { name: 'Baccarat', slugs: ['baccarat'], button: /^(bet|deal)$/i, weight: 1,
               prep: page => clickText(page, Math.random() < 0.6 ? /^banker\b/i : /^player\b/i) },
   roulette: { name: 'Roulette', slugs: ['roulette'], button: /^(bet|spin)$/i, weight: 1,
@@ -293,6 +292,49 @@ async function runSteps(page, st, n) {
   return { done, survived: false };
 }
 
+// ---- blackjack: basic strategy from the hand values shown on the table ----
+async function bjRead(ui) {
+  await deep(ui);
+  return ui.evaluate(() => {
+    const vis = e => !!(e.offsetParent || e.getClientRects().length);
+    const vals = window.__deepAll('span,div,p,b,strong').filter(e => vis(e) && e.children.length === 0 && /^\s*(\d{1,2})(\s*[\/,]\s*\d{1,2})?\s*$/.test(e.textContent || '') && !e.closest('input'))
+      .map(e => { const t = e.textContent.trim(); const n = t.split(/[\/,]/).map(Number).filter(x => x <= 21); const r = e.getBoundingClientRect(); return { y: r.top, x: r.left, best: Math.max(...n), soft: n.length > 1 }; })
+      .filter(v => v.best >= 2 && v.best <= 21);
+    if (vals.length < 2) return null;
+    vals.sort((a, b) => a.y - b.y);                          // dealer sits above the player
+    const d = vals[0], me = vals[vals.length - 1];
+    const btns = window.__deepAll('button').filter(vis).map(b => (b.innerText || '').trim().toLowerCase());
+    return { dealer: d.best, me: me.best, soft: me.soft, canDouble: btns.includes('double'), canSplit: btns.includes('split') };
+  }).catch(() => null);
+}
+function bjMove(h) {
+  const { me, dealer: d, soft } = h;
+  if (soft) { if (me >= 19) return 'stand'; if (me === 18) return d >= 9 ? 'hit' : (d >= 3 && d <= 6 && h.canDouble ? 'double' : 'stand'); if (me >= 15 && d >= 4 && d <= 6 && h.canDouble) return 'double'; return 'hit'; }
+  if (me >= 17) return 'stand';
+  if (me >= 13) return d <= 6 ? 'stand' : 'hit';
+  if (me === 12) return d >= 4 && d <= 6 ? 'stand' : 'hit';
+  if (me === 11) return h.canDouble ? 'double' : 'hit';
+  if (me === 10) return d <= 9 && h.canDouble ? 'double' : 'hit';
+  if (me === 9) return d >= 3 && d <= 6 && h.canDouble ? 'double' : 'hit';
+  return 'hit';
+}
+async function playBlackjack(ui, tell) {
+  await sleep(2500);
+  for (let i = 0; i < 8; i++) {
+    await clickText(ui, /^\s*(no( insurance)?|decline|no thanks)\s*$/i);   // never take insurance
+    const btn = re => playButton(ui, re);
+    const hit = await btn(/^\s*hit\s*$/i), stand = await btn(/^\s*stand\s*$/i);
+    if (!hit && !stand) return;                                       // hand is over
+    const h = await bjRead(ui);
+    let move = h ? bjMove(h) : 'stand';
+    let b = move === 'double' ? await btn(/^\s*double( down)?\s*$/i) : null;
+    if (!b) { if (move === 'double') move = 'hit'; b = move === 'hit' ? hit : stand; }
+    if (h) tell('bj', { me: h.me + (h.soft ? ' soft' : ''), dealer: h.dealer, action: move });
+    await b.click({ timeout: 3000 }).catch(() => {});
+    await sleep(rand(1500, 2500));
+  }
+}
+
 // ---- round results: read from the game's own network replies (logged once so we can tune) ----
 let lastJson = null, keysLogged = 0, onAutoResult = null;
 function findResult(o) {
@@ -323,7 +365,7 @@ module.exports = function startPlayer(page, shared) {
   page.setDefaultTimeout(8000);                       // no action can hang the loop
   shared.playing = true;
   sniff(page);
-  let autoDiagDone = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
+  let autoDiagDone = false, openedAt = Date.now(), justRan = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
   const tellRaw = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const tell = (type, q) => { if (type === 'round') shared.lastRound = Date.now(); return tellRaw(type, q); };
   const slots = require('./slots')({ page, shared, base: BASE, tell });
@@ -368,7 +410,7 @@ module.exports = function startPlayer(page, shared) {
     return pick(bag);
   }
   async function open(key, by) {
-    current = key; until = Date.now() + rand(5, 10) * 60e3; fails = 0;
+    current = key; until = Date.now() + rand(5, 10) * 60e3; fails = 0; openedAt = Date.now();
     log('opening', GAMES[key].name, by ? `(requested by ${by})` : '');
     for (const slug of GAMES[key].slugs) {
       await page.goto(`${BASE}/games/housegames-${slug}`, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('open failed', e.message));
@@ -424,11 +466,6 @@ module.exports = function startPlayer(page, shared) {
       // finished: no results for a while and no stop button
       if (Date.now() - lastRes > 10e3 && !(await autoRunning(ui))) break;
       if (Date.now() - lastLog > 60e3) { lastLog = Date.now(); log(`auto: ${got}/${n} on ${g.name}`); }
-      if (Date.now() - lastQ > 10e3) {                                  // a viewer asked for a game: wrap up
-        lastQ = Date.now();
-        const q = await fetch(`${BRAIN}/queue/size`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null);
-        if (q && q.n > 0) { why = 'request'; break; }
-      }
     }
     if (Date.now() - t0 >= MAX_MS) why = 'time';
     for (let k = 0; k < 3 && await autoRunning(ui); k++) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(1500); }
@@ -453,7 +490,9 @@ module.exports = function startPlayer(page, shared) {
       if (idle < 60e3) shared.reopened = false;
       try {
         // chat request first, then rotation
-        const q = await fetch(`${BRAIN}/queue`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null);
+        const canSwitch = Date.now() - openedAt > 3 * 60e3 || justRan;
+        justRan = false;
+        const q = !canSwitch ? null : await fetch(`${BRAIN}/queue`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null);
         const want = q && resolve(q.game);
         if (q && q.game && !want) {                                    // not an original: try it as a slot (Fun mode)
           if (process.env.SLOTS === '1') { await slots.play(q.game, q.by); await open('dice'); }
@@ -487,12 +526,13 @@ module.exports = function startPlayer(page, shared) {
           continue;
         }
         await setTarget(current);
-        if (g.auto && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.85)) { const ok = await autoBatch(g); fails = 0; if (ok) continue; }
+        if (g.auto && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.85)) { const ok = await autoBatch(g); fails = 0; if (ok) { justRan = true; continue; } }
         if (g.prep) await g.prep(ui);
         if (!(await zeroBet(ui))) continue;                         // check again right before the click
         const b = await playButton(ui, g.button);
         if (!b) { if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
+        if (g.bj) await playBlackjack(ui, tell);
         if (g.steps) {                                                  // steps go up after a win, down after a bust
           const st = g.steps; level[current] = level[current] || st.min;
           const cap = st.cap || st.max, spread = pick([-2, -1, -1, 0, 0, 0, 1, 1, 2, 3]);
