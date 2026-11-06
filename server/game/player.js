@@ -140,6 +140,19 @@ async function diag(page) {
     log('diag', f.url().slice(0, 60), `\n   shadow hosts: ${info.shadows} · playwright visible inputs: ${pw}`, '\n   visible inputs:', info.vin.join(' ; ') || 'none', '\n   html:', info.html);
   }
 }
+async function autoDiag(ui) {
+  await deep(ui);
+  const rows = await ui.evaluate(() => {
+    const D = window.__deepAll, up = window.__up, T = window.__text;
+    const vis = e => !!(e.offsetParent || e.getClientRects().length);
+    return D('input, [contenteditable="true"], [role=spinbutton]').filter(vis).slice(0, 10).map(x => {
+      let p = x, t = ''; for (let i = 0; i < 3 && p; i++) { p = up(p); if (p) t = T(p).replace(/\s+/g, ' ').trim(); if (t.length > 3) break; }
+      return `${x.tagName.toLowerCase()}|${x.type || ''}|v=${x.value ?? x.textContent}|ph=${x.placeholder || ''}|near="${t.slice(0, 50)}"`;
+    });
+  }).catch(e => ['err ' + e.message]);
+  const btns = await ui.evaluate(() => window.__deepAll('button').filter(b => b.offsetParent || b.getClientRects().length).map(b => (b.innerText || '').trim()).filter(Boolean).slice(0, 25).join(' | ')).catch(() => '');
+  log('auto panel (one time):\n   ' + rows.join('\n   ') + '\n   buttons: ' + btns);
+}
 async function pickTiles(ui, n) {
   await deep(ui);
   const ok = await ui.evaluate(n => {
@@ -242,7 +255,7 @@ module.exports = function startPlayer(page, shared) {
   page.setDefaultTimeout(8000);                       // no action can hang the loop
   shared.playing = true;
   sniff(page);
-  let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
+  let autoDiagDone = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
   const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const slots = require('./slots')({ page, shared, base: BASE, tell });
   let nextSlotBreak = Date.now() + rand(50, 70) * 60e3;
@@ -305,7 +318,8 @@ module.exports = function startPlayer(page, shared) {
     if (!(await zeroBet(ui))) { log('auto: bet box not 0, skipping'); await clickText(ui, /^manual$/i); return false; }
     if (g.prep) await g.prep(ui);
     if (g.autoPrep) await g.autoPrep(ui);
-    const set = await setByLabel(ui, /number of bets/i, n);
+    let set = await setByLabel(ui, /number of (bets|rounds|plays)|no\.? of bets|bets? count|total bets|^\s*(bets|rounds)\s*$/i, n);
+    if (!set && !autoDiagDone) { autoDiagDone = true; await autoDiag(ui); }
     if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(ui, /^manual$/i); return false; }
     if (!(await zeroBet(ui))) { await clickText(ui, /^manual$/i); return false; }
     const start = ui.locator('button').filter({ hasText: /^\s*start autobet/i }).first();
