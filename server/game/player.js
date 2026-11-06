@@ -263,6 +263,7 @@ const readBet = page => page.locator('[data-hubie-bet="1"]').first().inputValue(
 
 // games with steps inside a round (Road, Tower, Mines, Hilo, Blackjack)
 let boardBroken = false;
+async function waitBtn(ui, re, ms) { const t0 = Date.now(); for (;;) { const b = await playButton(ui, re); if (b || Date.now() - t0 > ms) return b; await sleep(400); } }
 const anyVisible = (ui, re) => ui.locator('button:visible').filter({ hasText: re }).count().then(c => c > 0).catch(() => false);
 async function runSteps(page, st, n) {
   await sleep(1500);
@@ -272,13 +273,15 @@ async function runSteps(page, st, n) {
   for (let i = 0; i < n; i++) {
     let b = null;
     if (st.step === 'safer') {                                    // Hilo: the side with the lower multiplier is more likely
+      await deep(page);
       const idx = await page.evaluate(() => {
-        const bs = [...document.querySelectorAll('button')].filter(b => b.offsetParent && /higher|lower/i.test(b.innerText));
+        const bs = window.__deepAll('button').filter(b => b.offsetParent && /higher|lower/i.test(b.innerText));
         const m = bs.map(b => parseFloat((/([\d.]+)\s*x/i.exec(b.innerText) || [])[1] || '99'));
         if (!bs.length) return -1;
         const i = m.indexOf(Math.min(...m)); bs.forEach(x => x.removeAttribute('data-hubie-pick')); bs[i].setAttribute('data-hubie-pick', '1'); return i;
       }).catch(() => -1);
       if (idx >= 0) b = page.locator('[data-hubie-pick="1"]').first();
+    } else if (i === 0 && !(await waitBtn(page, st.step, 6000)) && !st.board) { break;
     } else if (st.board && !boardBroken && Math.random() < 0.8) {      // click the board itself, in this round's pattern
       if (await pickTiles(page, 1, pattern)) {
         await sleep(rand(900, 1500));
@@ -337,20 +340,26 @@ function bjMove(h) {
 }
 let shared_bj = 0;
 async function playBlackjack(ui, tell) {
-  await sleep(2500);
-  for (let i = 0; i < 8; i++) {
+  const HIT = /^\s*hit\s*$/i, STAND = /^\s*stand\s*$/i, BET = /^(bet|deal)$/i;
+  for (let i = 0; i < 12; i++) {
     await clickText(ui, /^\s*(no( insurance)?|decline|no thanks)\s*$/i);   // never take insurance
-    const btn = re => playButton(ui, re);
-    const hit = await btn(/^\s*hit\s*$/i), stand = await btn(/^\s*stand\s*$/i);
-    if (hit || stand) shared_bj = Date.now();
-    if (!hit && !stand) return;                                       // hand is over
+    // wait for the deal animation: Hit/Stand come alive, or the hand already ended (Bet is back)
+    let hit = null, stand = null;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 9000) {
+      hit = await playButton(ui, HIT); stand = await playButton(ui, STAND);
+      if (hit || stand) break;
+      if (await playButton(ui, BET)) return;                          // hand is over
+      await sleep(500);
+    }
+    if (!hit && !stand) return;
     const h = await bjRead(ui);
     let move = h ? bjMove(h) : 'stand';
-    let b = move === 'double' ? await btn(/^\s*(2\s*[x×]\s*)?double( down)?\s*$/i) : null;
-    if (!b) { if (move === 'double') move = 'hit'; b = move === 'hit' ? hit : stand; }
+    let b = move === 'double' ? await playButton(ui, /^\s*(2\s*[x×]\s*)?double( down)?\s*$/i) : null;
+    if (!b) { if (move === 'double') move = 'hit'; b = move === 'hit' ? (hit || stand) : (stand || hit); }
     if (h) tell('bj', { me: h.me + (h.soft ? ' soft' : ''), dealer: h.dealer, action: move });
     await b.click({ timeout: 3000 }).catch(() => {});
-    await sleep(rand(1500, 2500));
+    await sleep(rand(1800, 2600));
   }
 }
 
@@ -557,6 +566,7 @@ module.exports = function startPlayer(page, shared) {
 
         const g = GAMES[current];
         if (await autoRunning(ui)) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(2000); continue; }
+        if (g.bj && (await anyVisible(ui, /^\s*(hit|stand)\s*$/i)) && !(await playButton(ui, g.button))) { log('finishing a blackjack hand'); await playBlackjack(ui, tell); continue; }
         if (g.steps && g.steps.cash && typeof g.steps.step !== 'string' && (await anyVisible(ui, g.steps.cash)) && !(await playButton(ui, g.button))) {   // a round left open: one step, then cash out
           openTries = (openTries || 0) + 1; log('finishing an open round on', g.name, `(try ${openTries})`);
           if (openTries > 3) { log('open round stuck: reloading the game'); openTries = 0; await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); continue; }
@@ -579,7 +589,8 @@ module.exports = function startPlayer(page, shared) {
         if (g.prep) await g.prep(ui);
         if (!(await zeroBet(ui))) continue;                         // check again right before the click
         const b = await playButton(ui, g.button);
-        if (!b) { if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
+        if (!b) { if (await anyVisible(ui, /^\s*(hit|stand|cash ?out|random( tile| pick)?|higher|lower)\b/i)) { await sleep(2000); continue; }
+          if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
         const t0 = Date.now(); await b.click({ timeout: 3000 });
         if (g.bj) await playBlackjack(ui, tell);
         if (g.steps) {                                                  // steps go up after a win, down after a bust
