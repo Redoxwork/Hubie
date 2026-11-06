@@ -13,6 +13,7 @@ let lastCheckLog = 0, lastLogin = 0, calmLogged = false;
 
 // ---- stuck security check: reload a few times, then show Hubie's Lounge and retry Housebets every 20 min ----
 const LOUNGE = 'http://127.0.0.1:8090/avatar/lounge.html';
+const shared = { blocked: false, lounge: false };   // read by the game player
 let blockedSince = 0, reloads = 0, lastReload = 0, loungeSince = 0;
 const tellBrain = game => fetch('http://127.0.0.1:8090/state?game=' + encodeURIComponent(game)).catch(() => {});
 async function isBlocked(page) {
@@ -29,7 +30,7 @@ async function goLounge(page) {
 
 // Calm mode: pause the page's animations and videos so the stream stays sharp and light (off: HUBIE_CALM=0)
 async function calm(page) {
-  if (process.env.HUBIE_CALM === '0') return;
+  if (process.env.HUBIE_CALM === '0' || /\/games\//.test(page.url())) return;
   const done = await page.evaluate(() => {
     if (!document.getElementById('hubie-calm')) {
       const st = document.createElement('style'); st.id = 'hubie-calm';
@@ -79,6 +80,7 @@ async function login(page) {
 async function tick(page) {
   const url = page.url();
   const title = await page.title().catch(() => '');
+  shared.lounge = url.startsWith(LOUNGE);
   if (url.startsWith(LOUNGE)) {                                   // in the lounge: try Housebets again every 20 min
     if (Date.now() - loungeSince > 20 * 60e3) {
       log('lounge: trying Housebets again');
@@ -106,7 +108,8 @@ async function tick(page) {
   }, { safe: SAFE.source, never: NEVER.source }).catch(() => null);
   if (hit) log('closed popup:', JSON.stringify(hit));
   await calm(page);
-  if (await isBlocked(page)) {                                     // never click it; reload, then the lounge
+  shared.blocked = await isBlocked(page);
+  if (shared.blocked) {                                            // never click it; reload, then the lounge
     if (!blockedSince) blockedSince = Date.now();
     if (Date.now() - lastCheckLog > 10 * 60e3) { lastCheckLog = Date.now(); log('security check is showing (waiting on Housebets)'); }
     const stuck = Date.now() - blockedSince;
@@ -131,8 +134,10 @@ async function tick(page) {
   if (!browser) { log('could not reach the game window'); process.exit(1); }
   browser.on('disconnected', () => { log('game window closed'); process.exit(0); });
   log('attached to the game window');
+  let playerOn = false;
   for (;;) {
     const page = browser.contexts()[0]?.pages().find(p => !p.url().startsWith('devtools')) || null;
+    if (page && process.env.GAMES === '1' && !playerOn) { playerOn = true; require('./player')(page, shared); }
     if (page) await tick(page).catch(e => log('tick error', e.message));
     await new Promise(r => setTimeout(r, 20000));
   }

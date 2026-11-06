@@ -45,6 +45,10 @@
   .gamebox{position:absolute;right:2%;bottom:9%;width:min(22vw,36vh);z-index:3;display:none;background:#09161c;border:2px solid #2b6b78;
     border-radius:14px;padding:.6em .8em;font-size:clamp(10px,1.3vw,24px);color:#e6f4f5}
   .gamebox.on{display:block}
+  .statbar{position:absolute;left:1.2%;bottom:7.5%;z-index:3;display:none;gap:.5em;font-size:clamp(9px,1vw,19px);font-weight:600}
+  .statbar.on{display:flex}
+  .statbar span{background:#09161c;border:1px solid #2b5562;border-radius:9px;padding:.25em .6em;color:#cfe}
+  .statbar b{color:var(--gold)}
   .gamebox h3{margin:0 0 .35em;font-size:1.05em;letter-spacing:.04em;color:var(--teal);display:flex;justify-content:space-between;gap:.5em}
   .gamebox h3 span{color:var(--gold);font-variant-numeric:tabular-nums}
   .gamebox .big{font-size:2.6em;font-weight:800;text-align:center;color:var(--gold);line-height:1.1}
@@ -110,6 +114,7 @@
     <div class="caption" id="caption"><span class="who">hubie</span><span id="capText"></span></div>
   </div>
   <div class="gamebox" id="gamebox"></div>
+  <div class="statbar" id="statbar"></div>
   <div class="banner"><span><b>18+</b> only</span><span>Demo play, no real money</span><span>Please gamble responsibly</span></div>
 </div>
 
@@ -414,6 +419,14 @@ const RIG = __RIG__;
     document.getElementById('rtText').textContent = text.length > 120 ? text.slice(0,117) + '...' : text;
     rtBox.classList.add('on');
   }
+  // stats bar: game, rounds today, best multiplier, Hubie vs the RNG
+  const sBar = document.getElementById('statbar');
+  function showStats(st){
+    if (!st){ sBar.classList.remove('on'); return; }
+    sBar.innerHTML = `<span>🎮 <b>${esc(st.game)}</b></span><span>rounds <b>${st.rounds}</b></span>` +
+      (st.best ? `<span>best <b>${st.best}x</b></span>` : '') + `<span>hubie vs rng <b>${st.hubie}–${st.rng}</b></span>`;
+    sBar.classList.add('on');
+  }
   // chat game panel (guess the roll / poll)
   const gBox = document.getElementById('gamebox');
   let gState = null, gEnd = 0;
@@ -448,6 +461,7 @@ const RIG = __RIG__;
       if (m.type==='caption') showCaption(m.text, m.ms||4000);
       if (m.type==='replying') showReply(m.name, m.text);
       if (m.type==='game') showGame(m.state);
+      if (m.type==='stats') showStats(m.state);
       if (m.type==='layout') { layout = m.mode; setLayout(layout); }
     };
     ws.onclose = () => { if (sock === ws) sock = null; setTimeout(()=>connect(url), 2000); };
