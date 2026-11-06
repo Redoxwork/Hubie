@@ -22,7 +22,7 @@ const GAMES = {
   wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|spin)$/i, weight: 2,
               prep: page => setRange(page, /segments/, pick([10, 20, 30, 30, 40, 50])) },
   keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 5,
-              prep: page => clickText(page, /^(auto ?pick|random( pick)?)$/i) },
+              prep: page => kenoPick(page) },
   maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
   crash:    { name: 'Crash',    slugs: ['crash'], button: /^\s*(bet|place bet|bet \(next round\)|join)\s*$/i, weight: 2, crash: true,
               prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out/i, pick(['1.5', '2', '2', '3', '5', '10'])) },
@@ -36,10 +36,15 @@ const GAMES = {
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
               steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
   blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^(bet|deal)$/i, weight: 2, bj: true },
-  baccarat: { name: 'Baccarat', slugs: ['baccarat'], button: /^(bet|deal)$/i, weight: 1,
+  baccarat: { name: 'Baccarat', slugs: ['baccarat'], button: /^\s*(bet|deal)\b(?!\s*amount)/i, weight: 1,
               prep: page => clickText(page, Math.random() < 0.6 ? /^banker\b/i : /^player\b/i) },
-  roulette: { name: 'Roulette', slugs: ['roulette'], button: /^(bet|spin)$/i, weight: 1,
-              prep: page => clickText(page, pick([/^even$/i, /^odd$/i, /^1.18$/i, /^19.36$/i])) },
+  roulette: { name: 'Roulette', slugs: ['roulette'], button: /^\s*(bet|spin)\b(?!\s*amount)/i, weight: 1,
+              prep: async page => {
+                await clickText(page, /^\s*(clear|clear bets|undo all)\s*$/i);
+                const spots = [/^\s*even\s*$/i, /^\s*odd\s*$/i, /^\s*1\s*[-–]\s*18\s*$/i, /^\s*19\s*[-–]\s*36\s*$/i, /^\s*1\s*st\s*12\s*$/i, /^\s*2\s*nd\s*12\s*$/i, /^\s*3\s*rd\s*12\s*$/i];
+                for (const sp of [pick(spots), ...(Math.random() < 0.4 ? [pick(spots)] : [])]) { await clickAny(page, sp); await sleep(400); }
+                if (Math.random() < 0.3) await clickAny(page, new RegExp('^\\s*' + (1 + Math.floor(Math.random() * 36)) + '\\s*$'));   // a straight-up number now and then
+              } },
 };
 const ALIASES = { coin: 'coinflip', 'coin flip': 'coinflip', 'max win': 'maxwin', max: 'maxwin', plink: 'plinko', 'hubies road': 'road', 'hubie road': 'road', hubiesroad: 'road',
   'dragon tower': 'tower', dragontower: 'tower', dragon: 'tower', mine: 'mines', 'hi lo': 'hilo', 'black jack': 'blackjack', bj: 'blackjack' };
@@ -76,6 +81,27 @@ async function clickText(ui, re) {
     return true;
   }
   return false;
+}
+async function clickAny(ui, re) {
+  const all = ui.getByText(re);
+  const n = Math.min(await all.count().catch(() => 0), 10);
+  for (let i = 0; i < n; i++) {
+    const el = all.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const t = (await el.innerText().catch(() => '')).trim();
+    if (NEVER.test(t)) continue;
+    await el.click({ timeout: 3000 }).catch(() => {});
+    return true;
+  }
+  return false;
+}
+// Keno: clear the board, then pick 3-10 random numbers by clicking them
+async function kenoPick(ui) {
+  await clickText(ui, /^\s*(clear( table)?|reset)\s*$/i); await sleep(400);
+  if (await clickText(ui, /^\s*(auto ?pick|random( pick)?)\s*$/i)) return;
+  const want = pick([3, 4, 5, 5, 6, 7, 8, 10]); const nums = new Set();
+  while (nums.size < want) nums.add(1 + Math.floor(Math.random() * 40));
+  for (const k of nums) { await clickAny(ui, new RegExp('^\\s*' + k + '\\s*$')); await sleep(rand(150, 350)); }
 }
 async function setNumber(page, labelRe, value) {
   const ok = await page.evaluate(({ src }) => {
