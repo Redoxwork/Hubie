@@ -37,8 +37,8 @@ case "${1:-help}" in
 
   live)   # the real thing: non-stop stream that restarts itself (and survives reboots)
     systemctl stop hubie-test 2>/dev/null || true
-    if systemctl is-active --quiet hubie-live || pgrep -f ffmpeg >/dev/null; then
-      systemctl stop hubie-live; pkill -f ffmpeg; pkill -f google-chrome; pkill -f Xvfb; pkill -f mediamtx
+    if systemctl is-active --quiet hubie-live || pgrep -f ffmpeg >/dev/null || pgrep -f live.sh >/dev/null; then
+      systemctl stop hubie-live || true; pkill -f ffmpeg || true; pkill -f google-chrome || true; pkill -f Xvfb || true; pkill -f mediamtx || true
       touch "$H/data/fresh-session"; chown hubie:hubie "$H/data/fresh-session"   # the server waits 90 s itself
       echo "Restarting: offline for 90 s so Kick starts a fresh stream session (the server handles it, you can close Termius)."
     fi
@@ -53,7 +53,7 @@ case "${1:-help}" in
     systemctl disable --now hubie-live >/dev/null 2>&1 || true
     systemctl stop hubie-test 2>/dev/null || true
     [ "${2:-}" = all ] && systemctl stop hubie-brain 2>/dev/null
-    pkill -f stream_test.sh; pkill -f live.sh; pkill -f ffmpeg; pkill -f mediamtx; pkill -f google-chrome; pkill -f Xvfb; pkill -f keeper.js; sleep 1
+    for p in stream_test.sh live.sh ffmpeg mediamtx google-chrome Xvfb keeper.js proxy.js; do pkill -f "$p" || true; done; sleep 1
     pgrep -f ffmpeg >/dev/null && echo "something is still running, try again" || echo "stopped (Kick can take a minute to show offline)" ;;
 
   proxy)   # hubie proxy <http://user:pass@host:port> | off | test
