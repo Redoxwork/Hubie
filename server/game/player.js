@@ -15,10 +15,11 @@ const NEVER = /deposit|withdraw|cashier|wallet|buy|purchase|real money|autobet|a
 const GAMES = {
   dice:     { name: 'Dice',     slugs: ['dice'], auto: true, button: /^(roll|bet)$/i, weight: 3 },
   limbo:    { name: 'Limbo',    slugs: ['limbo'], auto: true, button: /^bet$/i, weight: 6 },
-  coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], button: /^(bet|flip)$/i, weight: 2,
-              prep: page => clickText(page, Math.random() < 0.5 ? /^heads$/i : /^tails$/i) },
+  coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], auto: true, button: /^(bet|flip)$/i, weight: 2,
+              prep: async page => { await clickText(page, Math.random() < 0.5 ? /^\s*heads\s*$/i : /^\s*tails\s*$/i); await setRange(page, /coins/, pick([1, 1, 1, 2, 3])); await setRange(page, /flips/, pick([1, 1, 2, 3])); } },
   plinko:   { name: 'Plinko',   slugs: ['plinko'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|drop)$/i, weight: 2 },
-  wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|spin)$/i, weight: 2 },
+  wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|spin)$/i, weight: 2,
+              prep: page => setRange(page, /segments/, pick([10, 20, 30, 30, 40, 50])) },
   keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 5,
               prep: page => clickText(page, /^(auto ?pick|random( pick)?)$/i) },
   maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
@@ -174,6 +175,23 @@ async function autoDiag(ui) {
 // click n random hidden tiles on a game board (Mines, Dragon Tower...): the biggest group of
 // same-size, label-less, clickable squares on screen. Never anything with text on it.
 const PATTERNS = ['random', 'random', 'corners', 'diagonal', 'row', 'column', 'cluster', 'edge', 'center', 'zigzag'];
+// set a slider (input type=range) by the label next to it, e.g. "Segments", "Coins", "Flips"
+async function setRange(ui, labelRe, value) {
+  await deep(ui);
+  return ui.evaluate(({ src, value }) => {
+    const D = window.__deepAll, up = window.__up, T = window.__text, re = new RegExp(src, 'i');
+    for (const r of D('input[type=range]')) {
+      if (!(r.offsetParent || r.getClientRects().length) || r.disabled) continue;
+      let p = r, hit = false; for (let i = 0; i < 4 && p; i++, p = up(p)) if (re.test(T(p))) { hit = true; break; }
+      if (!hit) continue;
+      const v = Math.max(Number(r.min || 0), Math.min(Number(r.max || 100), value));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(r, String(v));
+      r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true }));
+      return r.value;
+    }
+    return null;
+  }, { src: labelRe.source, value }).catch(() => null);
+}
 async function pickTiles(ui, n, pattern) {
   pattern = pattern || pick(PATTERNS);
   await deep(ui);
