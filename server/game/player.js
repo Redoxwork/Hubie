@@ -744,7 +744,7 @@ module.exports = function startPlayer(page, shared) {
           if (!how) speed[g.name] = 'none';
           else {
             speed[g.name] = 'testing'; const g0 = got, s0 = Date.now();
-            await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {});
+            await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {}); await keepInView(ui);
             await sleep(800);
             const fastOpt = ui.locator('button:visible,[role=menuitem]:visible,[role=option]:visible').filter({ hasText: /^\s*(turbo|fastest|instant|fast|3x|x3)\s*$/i }).first();
             if (await fastOpt.isVisible().catch(() => false)) await fastOpt.click({ timeout: 2000 }).catch(() => {});
@@ -758,7 +758,7 @@ module.exports = function startPlayer(page, shared) {
         if (after > speedCheck.before * 1.25) { speed[g.name] = 'on'; log(`auto: speed button on for ${g.name} (${Math.round(speedCheck.before)} -> ${Math.round(after)} bets/min)`); }
         else {
           speed[g.name] = 'no gain';
-          if (await speedBtn(ui)) { await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {}); await sleep(500); if (await ui.locator('[role=dialog]:visible,[role=menu]:visible').count().catch(() => 0)) await ui.keyboard.press('Escape').catch(() => {}); }
+          if (await speedBtn(ui)) { await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {}); await keepInView(ui); await sleep(500); if (await ui.locator('[role=dialog]:visible,[role=menu]:visible').count().catch(() => 0)) await ui.keyboard.press('Escape').catch(() => {}); }
           log(`auto: speed button made no difference on ${g.name} (${Math.round(speedCheck.before)} -> ${Math.round(after)}/min), switched it back`);
         }
         speedCheck = null;
@@ -766,7 +766,7 @@ module.exports = function startPlayer(page, shared) {
     }
     if (Date.now() - t0 >= MAX_MS) why = 'time';
     if (speedCheck) {                                   // run ended mid speed-test: put the gauge back, try again next run (max 2 tries)
-      if (await speedBtn(ui)) await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {});
+      if (await speedBtn(ui)) await ui.locator('[data-hubie-speed="1"]').first().click({ timeout: 2000 }).catch(() => {}); await keepInView(ui);
       speedTries[g.name] = (speedTries[g.name] || 0) + 1; speed[g.name] = speedTries[g.name] >= 2 ? 'unsure' : undefined; speedCheck = null;
     }
     for (let k = 0; k < 3 && await autoRunning(ui); k++) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(1500); }
