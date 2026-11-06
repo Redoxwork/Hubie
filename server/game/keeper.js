@@ -152,9 +152,23 @@ async function tick(page) {
   if (!browser) { log('could not reach the game window'); process.exit(1); }
   browser.on('disconnected', () => { log('game window closed'); process.exit(0); });
   log('attached to the game window');
-  let playerOn = false;
+  let playerOn = false, main = null;
+  // one tab only: if the site (or a stray click) opens another tab/popup, the stream would show THAT
+  // while the game keeps playing hidden behind it. Close extras and keep the game tab in front.
+  const oneTab = async () => {
+    const ctx = browser.contexts()[0]; if (!ctx || !main) return;
+    for (const p of ctx.pages()) {
+      if (p === main || p.url().startsWith('devtools')) continue;
+      log('closing extra tab:', p.url().slice(0, 80)); await p.close().catch(() => {});
+    }
+    await main.bringToFront().catch(() => {});
+  };
+  browser.contexts()[0]?.on('page', () => setTimeout(() => oneTab().catch(() => {}), 1500));
   for (;;) {
-    const page = browser.contexts()[0]?.pages().find(p => !p.url().startsWith('devtools')) || null;
+    if (main && main.isClosed()) { log('game tab was closed, restarting the game bot'); process.exit(1); }
+    const page = main || browser.contexts()[0]?.pages().find(p => !p.url().startsWith('devtools')) || null;
+    if (page && !main) main = page;
+    await oneTab().catch(() => {});
     if (page && process.env.GAMES === '1' && !playerOn) { playerOn = true; require('./player')(page, shared); }
     if (page) await tick(page).catch(e => log('tick error', e.message));
     await new Promise(r => setTimeout(r, 20000));
