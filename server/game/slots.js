@@ -170,11 +170,13 @@ module.exports = function slots({ page, shared, base, tell }) {
     if (prov.id === 'unknown') { const { PROVIDERS } = require('./providers'); prov = PROVIDERS.find(p => p.match.test(cardText)) || prov; }
     log('provider:', prov.name, prov.bonus ? '(bonus mapped)' : '(no bonus map)');
     tell('game', { game: name, by: by || '', slot: 1, provider: prov.name });
-    const mins = Number(process.env.SLOT_MINUTES) || 5;     // a slot session: 5 min by default (house games come first)
-    const end = Date.now() + mins * 60e3; let quiet = 0, spins = 0, bonusUntil = 0;
+    const mins = Number(process.env.SLOT_MINUTES) || 15;    // a slot session: 15 min of autoplay by default
+    const end = Date.now() + mins * 60e3; let quiet = 0, spins = 0, bonusUntil = 0, wins = 0, best = 0;
+    const SIZES = String(process.env.SLOT_SPINS || '50,100,100,200').split(',').map(Number).filter(x => x > 0);
     while (Date.now() < end && !shared.blocked) {
-      const batch = Math.random() < 0.5 ? 10 : 25;
+      const batch = pick(SIZES);
       tell('auto', { game: name, n: batch });
+      log(`autoplay: ${batch} spins on ${name} (fun mode)`);
       for (let i = 0; i < batch && Date.now() < end; i++) {
         if (busyCpu()) { log('CPU busy: leaving the slot'); tell('slotheavy', { game: name }); return true; }
         const fr = slotFrame(page); if (!fr) { log('slot frame gone'); return true; }
@@ -196,14 +198,16 @@ module.exports = function slots({ page, shared, base, tell }) {
         quiet = 0; spins++;
         const w = lastWin && lastWin.at >= t0 ? lastWin.win : null;
         const bet = await demoBet();
-        tell('round', { game: name, win: w === null ? '' : (w > 0 ? 1 : 0), mult: w && bet ? (w / bet).toFixed(2) : '', slot: 1 });
+        const mult = w && bet ? w / bet : 0; if (w > 0) wins++; if (mult > best) best = mult;
+        tell('round', { game: name, win: w === null ? '' : (w > 0 ? 1 : 0), mult: mult ? mult.toFixed(2) : '', slot: 1, auto: 1 });
         if (!(await ensureFun(page))) { log('FUN mode lost: leaving now'); return true; }   // re-check every spin
         if ((await ask('/bonus/take')).go && await buyBonus(prov, name)) { bonusUntil = Date.now() + 160e3; quiet = 0; }   // chat voted for a bonus buy
       }
       if ((await ask('/queue/size')).n > 0) { log('queue waiting: wrapping up', name); break; }   // finish this batch, then the queue
       await sleep(rand(2000, 4000));
     }
-    log(`done with ${name} (${spins} spins)`);
+    log(`done with ${name} (${spins} spins, ${wins} wins, best ${best.toFixed(1)}x)`);
+    if (spins) tell('autoend', { game: name, n: spins, wins, best: Math.round(best * 100) / 100, why: shared.blocked ? 'blocked' : 'done' });
     return true;
   }
   // bonus buy by the words on the buttons (works in any layout): BUY BONUS -> cheapest BUY -> OK
