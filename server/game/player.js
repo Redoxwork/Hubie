@@ -48,6 +48,20 @@ function resolve(n) {
 }
 
 // ---- page helpers ----
+// Housebets draws its game panel inside shadow DOM, so plain querySelectorAll can't see it.
+// DEEP installs window.__deepAll(sel, root) and window.__up(el) (parent that crosses shadow roots).
+const DEEP = `window.__deepAll = function (sel, root) {
+  const out = [], seen = new Set();
+  (function walk(r) {
+    r.querySelectorAll(sel).forEach(e => { if (!seen.has(e)) { seen.add(e); out.push(e); } });
+    r.querySelectorAll('*').forEach(e => { if (e.shadowRoot) walk(e.shadowRoot); });
+  })(root || document);
+  return out;
+};
+window.__up = function (el) { return el.parentElement || (el.getRootNode && el.getRootNode().host) || null; };
+window.__text = function (el) { try { return el.innerText || el.textContent || ''; } catch (e) { return ''; } };
+true`;
+const deep = ui => ui.evaluate(DEEP).catch(() => false);
 async function clickText(page, re) {
   const el = page.locator('button, [role=button], [role=tab]').filter({ hasText: re }).first();
   if (await el.isVisible().catch(() => false)) { const t = (await el.innerText().catch(() => '')).trim(); if (!NEVER.test(t)) await el.click({ timeout: 3000 }).catch(() => {}); }
@@ -66,22 +80,22 @@ async function setNumber(page, labelRe, value) {
 // Find the Bet Amount box, force it to 0, and confirm. Returns true only if it reads exactly 0.
 // `ui` is the frame that holds the game (the page itself, or an embedded game frame).
 async function zeroBet(ui) {
+  await deep(ui);
   const read = () => ui.evaluate(() => {
+    const D = window.__deepAll, up = window.__up, T = window.__text;
     const vis = e => !!(e.offsetParent || e.getClientRects().length);
-    document.querySelectorAll('[data-hubie-bet]').forEach(e => e.removeAttribute('data-hubie-bet'));
+    D('[data-hubie-bet]').forEach(e => e.removeAttribute('data-hubie-bet'));
     const EDIT = 'input, textarea, [contenteditable="true"], [contenteditable=""], [role=spinbutton], [role=textbox]';
     const ok = x => vis(x) && !/checkbox|radio|range|hidden/i.test(x.type || '');
     const own = el => [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').trim();
-    // the label: an element whose OWN text (or whole short text) is "Bet Amount"
-    const labels = [...document.querySelectorAll('body *')].filter(el => vis(el) && el.children.length <= 4 &&
+    const labels = D('label,span,div,p,h1,h2,h3,h4,h5,h6,legend').filter(el => vis(el) && el.children.length <= 4 &&
       (/^(bet amount|chip value)\b/i.test(own(el)) || /^\s*(bet amount|chip value)\s*$/i.test(el.textContent || '')));
     for (const lab of labels) {
       let p = lab;
-      for (let i = 0; i < 6 && p; i++, p = p.parentElement) {
-        const ed = [...p.querySelectorAll(EDIT)].find(ok);
-        if (ed) { ed.setAttribute('data-hubie-bet', '1'); return { v: ed.value !== undefined && ed.tagName !== 'DIV' ? ed.value : ed.textContent, edit: true }; }
-        // no editable box: read the amount shown next to the label (first number after it)
-        const txt = (p.innerText || '').replace(/,/g, '');
+      for (let i = 0; i < 6 && p; i++, p = up(p)) {
+        const ed = D(EDIT, p.shadowRoot || p).find(ok) || (p.querySelectorAll ? [...p.querySelectorAll(EDIT)].find(ok) : null);
+        if (ed) { ed.setAttribute('data-hubie-bet', '1'); return { v: 'value' in ed && ed.tagName !== 'DIV' ? ed.value : ed.textContent, edit: true }; }
+        const txt = T(p).replace(/,/g, '');
         const m = /bet amount[^\d]{0,40}?(\d+(?:\.\d+)?)/i.exec(txt);
         if (m && i >= 1) return { v: m[1], edit: false };
       }
@@ -93,7 +107,7 @@ async function zeroBet(ui) {
   if (!r) return false;
   if (num(r.v) !== 0) {
     if (!r.edit) return false;                                          // shows a real amount and we can't change it: never bet
-    const el = ui.locator('[data-hubie-bet="1"]').first();
+    const el = ui.locator('[data-hubie-bet="1"]').first();             // playwright locators see inside shadow DOM
     await el.fill('0', { timeout: 3000 }).catch(async () => { await el.click({ timeout: 2000 }).catch(() => {}); await el.press('Control+A').catch(() => {}); await el.type('0').catch(() => {}); });
     await sleep(300); r = await read();
   }
@@ -111,21 +125,26 @@ async function findUI(page) {
 // one-time dump when the bet box can't be found, so it can be fixed from the log
 async function diag(page) {
   for (const f of page.frames()) {
-    if (/about:blank|challenges\.cloudflare/.test(f.url())) continue;
+    if (/challenges\.cloudflare/.test(f.url())) continue;
+    await deep(f);
+    const pw = await f.locator('input:visible').count().catch(() => -1);
     const info = await f.evaluate(() => {
+      const D = window.__deepAll, up = window.__up;
       const vis = e => !!(e.offsetParent || e.getClientRects().length);
-      const vin = [...document.querySelectorAll('input')].filter(vis).slice(0, 6).map(x => `${x.type}|${x.name || ''}|${x.placeholder || ''}|v=${x.value}`);
-      const lab = [...document.querySelectorAll('body *')].find(el => el.children.length <= 4 && /bet amount/i.test(el.textContent || '') && (el.textContent || '').length < 40);
-      let p = lab; for (let i = 0; i < 3 && p && p.parentElement; i++) p = p.parentElement;
-      return { vin, html: p ? p.outerHTML.replace(/\s+/g, ' ').replace(/ class="[^"]*"/g, '').slice(0, 700) : '(no Bet Amount label)' };
-    }).catch(e => ({ vin: [], html: 'err ' + e.message }));
-    log('diag', f.url().slice(0, 60), '\n   visible inputs:', info.vin.join(' ; ') || 'none', '\n   html:', info.html);
+      const shadows = D('*').filter(e => e.shadowRoot).length;
+      const vin = D('input').filter(vis).slice(0, 6).map(x => `${x.type}|${x.name || ''}|${x.placeholder || ''}|v=${x.value}`);
+      const lab = D('*').find(el => vis(el) && el.children.length <= 4 && /^\s*bet amount\s*$/i.test(el.textContent || ''));
+      let p = lab; for (let i = 0; i < 3 && p && up(p); i++) p = up(p);
+      return { shadows, vin, html: p ? (p.outerHTML || '').replace(/\s+/g, ' ').replace(/ class="[^"]*"/g, '').slice(0, 600) : '(no visible Bet Amount label)' };
+    }).catch(e => ({ shadows: '?', vin: [], html: 'err ' + e.message }));
+    log('diag', f.url().slice(0, 60), `\n   shadow hosts: ${info.shadows} · playwright visible inputs: ${pw}`, '\n   visible inputs:', info.vin.join(' ; ') || 'none', '\n   html:', info.html);
   }
 }
 async function pickTiles(ui, n) {
+  await deep(ui);
   const ok = await ui.evaluate(n => {
     // the board: a box with 25 similar clickable children
-    const boards = [...document.querySelectorAll('div')].filter(d => d.children.length === 25 && [...d.children].every(c => c.offsetParent || c.getClientRects().length));
+    const boards = window.__deepAll('div').filter(d => d.children.length === 25 && [...d.children].every(c => c.offsetParent || c.getClientRects().length));
     const b = boards[0]; if (!b) return false;
     const tiles = [...b.children]; const picks = new Set();
     while (picks.size < n) picks.add(Math.floor(Math.random() * 25));
@@ -147,19 +166,21 @@ async function playButton(page, re) {
 }
 
 // set a number box by its label (smallest container wins), never the Bet Amount box
-async function setByLabel(page, labelRe, value) {
-  const ok = await page.evaluate(({ src }) => {
+async function setByLabel(ui, labelRe, value) {
+  await deep(ui);
+  const ok = await ui.evaluate(({ src }) => {
+    const D = window.__deepAll, up = window.__up, T = window.__text;
     const re = new RegExp(src, 'i'); let best = null, bestDepth = 99;
-    for (const inp of document.querySelectorAll('input')) {
-      if (!inp.offsetParent || inp.hasAttribute('data-hubie-bet')) continue;
-      let p = inp; for (let d = 0; d < 5 && p; d++, p = p.parentElement) if (re.test(p.innerText || '')) { if (d < bestDepth) { best = inp; bestDepth = d; } break; }
+    for (const inp of D('input')) {
+      if (!(inp.offsetParent || inp.getClientRects().length) || inp.hasAttribute('data-hubie-bet') || /checkbox|radio|range|hidden/i.test(inp.type)) continue;
+      let p = inp; for (let d = 0; d < 5 && p; d++, p = up(p)) if (re.test(T(p))) { if (d < bestDepth) { best = inp; bestDepth = d; } break; }
     }
-    document.querySelectorAll('[data-hubie-n]').forEach(e => e.removeAttribute('data-hubie-n'));
+    D('[data-hubie-n]').forEach(e => e.removeAttribute('data-hubie-n'));
     if (best) best.setAttribute('data-hubie-n', '1');
     return !!best;
   }, { src: labelRe.source }).catch(() => false);
   if (!ok) return null;
-  const el = page.locator('[data-hubie-n="1"]').first();
+  const el = ui.locator('[data-hubie-n="1"]').first();
   await el.fill(String(value), { timeout: 3000 }).catch(() => {});
   return el.inputValue().catch(() => null);
 }
