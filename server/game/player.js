@@ -14,12 +14,12 @@ const NEVER = /deposit|withdraw|cashier|wallet|buy|purchase|real money|autobet|a
 // ---- game list (url slugs follow the dice page: /games/housegames-dice; fix here if one differs) ----
 const GAMES = {
   dice:     { name: 'Dice',     slugs: ['dice'], auto: true, button: /^(roll|bet)$/i, weight: 4 },
-  limbo:    { name: 'Limbo',    slugs: ['limbo'], auto: true, button: /^bet$/i, weight: 3 },
+  limbo:    { name: 'Limbo',    slugs: ['limbo'], auto: true, button: /^bet$/i, weight: 6 },
   coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], button: /^(bet|flip)$/i, weight: 2,
               prep: page => clickText(page, Math.random() < 0.5 ? /^heads$/i : /^tails$/i) },
   plinko:   { name: 'Plinko',   slugs: ['plinko'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|drop)$/i, weight: 2 },
   wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|spin)$/i, weight: 2 },
-  keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 1,
+  keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 5,
               prep: page => clickText(page, /^(auto ?pick|random( pick)?)$/i) },
   maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
   crash:    { name: 'Crash',    slugs: ['crash'], button: /^bet$/i, weight: 2,
@@ -29,7 +29,7 @@ const GAMES = {
               steps: { step: /^go$/i, min: 1, max: 3, cap: 8, cash: /^cash ?out/i } },
   tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2, risk: ['easy', 'medium', 'hard'],
               steps: { step: /^random ?pick$/i, min: 1, max: 3, cap: 7, cash: /^cash ?out/i } },
-  mines:    { name: 'Mines',    slugs: ['mines'], button: /^(bet|play)$/i, weight: 2, mines: [1, 2, 3, 5],
+  mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, 1 + Math.floor(Math.random() * 3)), button: /^(bet|play)$/i, weight: 5, mines: [1, 2, 3, 5],
               steps: { step: /^(random ?pick|pick random( tile)?)$/i, min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
               steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
@@ -113,6 +113,19 @@ async function diag(page) {
     })).catch(e => ['err ' + e.message]);
     log('diag frame', f.url().slice(0, 70), info.length ? '\n   ' + info.join('\n   ') : '(no inputs)');
   }
+}
+async function pickTiles(ui, n) {
+  const ok = await ui.evaluate(n => {
+    // the board: a box with 25 similar clickable children
+    const boards = [...document.querySelectorAll('div')].filter(d => d.children.length === 25 && [...d.children].every(c => c.offsetParent || c.getClientRects().length));
+    const b = boards[0]; if (!b) return false;
+    const tiles = [...b.children]; const picks = new Set();
+    while (picks.size < n) picks.add(Math.floor(Math.random() * 25));
+    for (const i of picks) { const t = tiles[i].querySelector('button') || tiles[i]; t.click(); }
+    return true;
+  }, n).catch(() => false);
+  if (!ok) await clickText(ui, /^(random ?pick|pick random( tile)?)$/i);
+  await sleep(500);
 }
 async function playButton(page, re) {
   const all = page.locator('button');
@@ -253,33 +266,52 @@ module.exports = function startPlayer(page, shared) {
     tell('game', { game: GAMES[key].name, by: by || '' });
     await applySettings(key);
   }
-  // Autobet batch: 10-25 bets, bet box must stay 0 the whole time, stops early if anything looks wrong
+  // Autobet run: 100 to 1000 bets (env AUTO_ROUNDS), bet box must stay 0 the whole time.
+  // Stops early when chat asks for a game, after AUTO_MAX_MIN minutes, or if anything looks wrong.
+  const ROUNDS = String(process.env.AUTO_ROUNDS || '100,100,250,250,500,1000').split(',').map(Number).filter(x => x > 0);
+  const MAX_MS = Number(process.env.AUTO_MAX_MIN || 25) * 60e3;
   async function autoBatch(g) {
-    const n = Math.floor(rand(10, 26));
-    await clickText(ui, /^auto$/i); await sleep(800);
+    const n = pick(ROUNDS);
+    await clickText(ui, /^auto$/i); await sleep(1000);
     if (!(await zeroBet(ui))) { log('auto: bet box not 0, skipping'); await clickText(ui, /^manual$/i); return false; }
+    if (g.prep) await g.prep(ui);
+    if (g.autoPrep) await g.autoPrep(ui);
     const set = await setByLabel(ui, /number of bets/i, n);
     if (!set || set === '0' || /∞|inf/i.test(set) || Number(set) !== n) { log('auto: could not set number of bets (', set, '), skipping'); await clickText(ui, /^manual$/i); return false; }
     if (!(await zeroBet(ui))) { await clickText(ui, /^manual$/i); return false; }
     const start = ui.locator('button').filter({ hasText: /^\s*start autobet/i }).first();
-    if (!(await start.isVisible().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(ui, /^manual$/i); return false; }
-    let got = 0;
-    onAutoResult = res => { got++; rounds++; tell('round', { game: g.name, win: res.win ? 1 : 0, mult: res.mult }); };
+    if (!(await start.isVisible().catch(() => false)) || !(await start.isEnabled().catch(() => false))) { log('auto: no Start Autobet button'); await clickText(ui, /^manual$/i); return false; }
+    let got = 0, wins = 0, best = 0;
+    onAutoResult = res => {
+      got++; rounds++; if (res.win) wins++; if (res.mult > best) best = res.mult;
+      // the brain counts every round, but only big wins get a reaction line
+      tell('round', { game: g.name, win: res.win ? 1 : 0, mult: res.mult, auto: 1 });
+    };
     tell('auto', { game: g.name, n });
     log(`auto: ${n} bets on ${g.name} at 0`);
     await start.click({ timeout: 3000 });
     const stop = ui.locator('button').filter({ hasText: /stop autobet/i }).first();
-    const t0 = Date.now();
-    while (Date.now() - t0 < n * 4000 + 20000) {
+    const t0 = Date.now(); let why = 'done', lastQ = 0;
+    while (Date.now() - t0 < Math.min(n * 4000 + 20000, MAX_MS)) {
       await sleep(1000);
       const v = await readBet(ui);
-      if (v !== null && parseFloat(v || '0') !== 0) { log('auto: BET BOX NOT 0, stopping now'); await stop.click({ timeout: 3000 }).catch(() => {}); break; }
-      if (shared.blocked || got >= n || !(await stop.isVisible().catch(() => false))) break;
+      if (v !== null && parseFloat(v || '0') !== 0) { log('auto: BET BOX NOT 0, stopping now'); why = 'safety'; break; }
+      if (shared.blocked) { why = 'blocked'; break; }
+      if (got >= n || !(await stop.isVisible().catch(() => false))) break;
+      if (Date.now() - lastQ > 10e3) {                                  // a viewer asked for a game: wrap up
+        lastQ = Date.now();
+        const q = await fetch(`${BRAIN}/queue/size`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null);
+        if (q && q.n > 0) { why = 'request'; break; }
+      }
     }
+    if (Date.now() - t0 >= MAX_MS) why = 'time';
     if (await stop.isVisible().catch(() => false)) await stop.click({ timeout: 3000 }).catch(() => {});
     onAutoResult = null;
-    await sleep(1000); await clickText(ui, /^manual$/i);
-    return true;
+    log(`auto: ${got} bets on ${g.name}, ${wins} wins, best ${best}x (${why})`);
+    tell('autoend', { game: g.name, n: got, wins, best: Math.round(best * 100) / 100, why });
+    await sleep(1500); await clickText(ui, /^manual$/i);
+    if (why !== 'request') until = Math.min(until, Date.now() + 60e3);   // after a long run, change game soon
+    return got > 0;
   }
 
   (async () => {
@@ -319,7 +351,7 @@ module.exports = function startPlayer(page, shared) {
           continue;
         }
         await setTarget(current);
-        if (g.auto && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.3)) { await autoBatch(g); fails = 0; continue; }
+        if (g.auto && process.env.AUTOBET !== '0' && Math.random() < Number(process.env.AUTOBET_SHARE || 0.85)) { const ok = await autoBatch(g); fails = 0; if (ok) continue; }
         if (g.prep) await g.prep(ui);
         if (!(await zeroBet(ui))) continue;                         // check again right before the click
         const b = await playButton(ui, g.button);
