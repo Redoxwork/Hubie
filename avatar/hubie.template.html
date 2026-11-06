@@ -423,7 +423,7 @@ const RIG = __RIG__;
   const sBar = document.getElementById('statbar');
   function showStats(st){
     if (!st){ sBar.classList.remove('on'); return; }
-    sBar.innerHTML = `<span>🎮 <b>${esc(st.game)}</b></span><span>rounds <b>${st.rounds}</b></span>` +
+    sBar.innerHTML = `<span>🎮 <b>${esc(st.game)}</b></span>` + (st.auto ? `<span style="background:#14b8a6;color:#04121a">⟳ AUTO <b>${esc(st.auto)}</b></span>` : '') + `<span>rounds <b>${st.rounds}</b></span>` +
       (st.best ? `<span>best <b>${st.best}x</b></span>` : '') + `<span>hubie vs rng <b>${st.hubie}–${st.rng}</b></span>`;
     sBar.classList.add('on');
   }
