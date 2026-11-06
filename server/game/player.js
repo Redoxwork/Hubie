@@ -410,7 +410,7 @@ module.exports = function startPlayer(page, shared) {
   shared.playing = true;
   sniff(page);
   feedTell = (t, q) => fetch(`${BRAIN}/event?type=${t}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
-  let autoDiagDone = false, openedAt = Date.now(), justRan = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
+  let openTries = 0, autoDiagDone = false, openedAt = Date.now(), justRan = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
   const tellRaw = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
   const tell = (type, q) => { if (type === 'round') shared.lastRound = Date.now(); return tellRaw(type, q); };
   const slots = require('./slots')({ page, shared, base: BASE, tell });
@@ -558,8 +558,9 @@ module.exports = function startPlayer(page, shared) {
         const g = GAMES[current];
         if (await autoRunning(ui)) { await stopBtn(ui).click({ timeout: 3000 }).catch(() => {}); await sleep(2000); continue; }
         if (g.steps && g.steps.cash && typeof g.steps.step !== 'string' && (await anyVisible(ui, g.steps.cash)) && !(await playButton(ui, g.button))) {   // a round left open: one step, then cash out
-          log('finishing an open round on', g.name);
-          await runSteps(ui, g.steps, 1); shared.lastRound = Date.now(); continue;
+          openTries = (openTries || 0) + 1; log('finishing an open round on', g.name, `(try ${openTries})`);
+          if (openTries > 3) { log('open round stuck: reloading the game'); openTries = 0; await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); continue; }
+          await runSteps(ui, g.steps, 1); continue;
         }
         if (await page.getByRole('button', { name: /^log ?in$/i }).first().isVisible().catch(() => false)) { if (++fails % 10 === 1) log('not logged in: waiting'); continue; }
         if (!(await zeroBet(ui))) {
@@ -589,7 +590,7 @@ module.exports = function startPlayer(page, shared) {
           else if (r.survived === false) level[current] = Math.max(st.min, level[current] - 1);
           if (r.survived && r.done > (bestLevel[current] || 0)) { bestLevel[current] = r.done; if (r.done >= 3) tell('steps', { game: g.name, steps: r.done }); }
         }
-        fails = 0; rounds++;
+        fails = 0; rounds++; openTries = 0;
         await sleep(2500);
         const res = lastJson && lastJson.at >= t0 ? lastJson : null;
         tell('round', { game: g.name, win: res ? (res.win ? 1 : 0) : '', mult: res ? res.mult : '' });
