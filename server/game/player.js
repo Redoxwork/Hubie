@@ -583,7 +583,7 @@ module.exports = function startPlayer(page, shared) {
   const recent = [];
   function nextGame() {
     const ok = k => !(benched[k] > Date.now());
-    if (Math.random() < 0.5 && chal.game !== current && ok(chal.game)) return chal.game;             // the challenge game, half the time
+    if (current && Math.random() < 0.25 && chal.game !== current && ok(chal.game)) return chal.game;   // the challenge game, now and then
     const keys = Object.keys(GAMES).filter(k => k !== current && ok(k) && recent.filter(r => r === k).length < 2);
     if (!keys.length) return 'dice';
     const bag = keys.flatMap(k => Array(GAMES[k].weight).fill(k));
