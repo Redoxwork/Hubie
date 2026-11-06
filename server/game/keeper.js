@@ -13,7 +13,7 @@ let lastCheckLog = 0, lastLogin = 0, calmLogged = false;
 
 // ---- stuck security check: reload a few times, then show Hubie's Lounge and retry Housebets every 20 min ----
 const LOUNGE = 'http://127.0.0.1:8090/avatar/lounge.html';
-const shared = { blocked: false, lounge: false };   // read by the game player
+const shared = { blocked: false, lounge: false, loggingIn: false, loggedOut: false, lastRound: Date.now() };   // read by the game player
 let blockedSince = 0, reloads = 0, lastReload = 0, loungeSince = 0;
 const tellBrain = game => fetch('http://127.0.0.1:8090/state?game=' + encodeURIComponent(game)).catch(() => {});
 async function isBlocked(page) {
@@ -69,12 +69,26 @@ async function login(page) {
   if (!(await email.isVisible().catch(() => false))) { log('login form: no email box found'); return; }
   await email.fill(process.env.HB_EMAIL);
   await pass.fill(process.env.HB_PASSWORD).catch(() => {});
+  // the login form has its own "verify you are human" box: give it time, tick it once if it asks
+  shared.loggingIn = true;
+  for (let i = 0; i < 12; i++) {
+    const cf = page.frames().find(f => /challenges\.cloudflare|turnstile/i.test(f.url()));
+    const token = await page.evaluate(() => { const t = document.querySelector('[name="cf-turnstile-response"]'); return t ? t.value : 'none'; }).catch(() => 'none');
+    if (!cf || (token && token !== 'none')) break;
+    if (i === 3) { log('login: ticking the verify box'); await cf.locator('input[type=checkbox], label, body').first().click({ timeout: 3000 }).catch(() => {}); }
+    await page.waitForTimeout(2500);
+  }
   const submit = page.locator('form button[type=submit]').first();
   if (await submit.isVisible().catch(() => false)) await submit.click(); else await pass.press('Enter').catch(() => {});
   await page.waitForTimeout(8000);
   const body = await page.locator('body').innerText().catch(() => '');
   if (/verification code|check your (e-?mail|inbox)|two.?factor|2fa|authenticator|one.?time/i.test(body)) log('login: ⚠️ Housebets asks for a code (turn 2FA/email codes off)');
-  log(await visibleLogin(page) ? 'login: ❌ still logged out' : 'login: ✅ logged in');
+  const out = !!(await visibleLogin(page));
+  shared.loggingIn = false; shared.loggedOut = out;
+  log(out ? 'login: ❌ still logged out (will try again in 10 min)' : 'login: ✅ logged in');
+  if (out) tellBrain("Housebets logged you out and you're logging back in, so the games are paused for a few minutes. Hang out with chat. Don't claim to be spinning, winning or losing right now.");
+  else tellBrain('');
+  await page.keyboard.press('Escape').catch(() => {});
 }
 
 async function tick(page) {
@@ -108,7 +122,7 @@ async function tick(page) {
   }, { safe: SAFE.source, never: NEVER.source }).catch(() => null);
   if (hit) log('closed popup:', JSON.stringify(hit));
   await calm(page);
-  shared.blocked = await isBlocked(page);
+  shared.blocked = !shared.loggingIn && await isBlocked(page);
   if (shared.blocked) {                                            // never click it; reload, then the lounge
     if (!blockedSince) blockedSince = Date.now();
     if (Date.now() - lastCheckLog > 10 * 60e3) { lastCheckLog = Date.now(); log('security check is showing (waiting on Housebets)'); }
@@ -122,7 +136,8 @@ async function tick(page) {
   }
   if (blockedSince || loungeSince) { log('Housebets is back'); tellBrain(''); }
   blockedSince = 0; reloads = 0; loungeSince = 0;
-  if (process.env.AUTO_LOGIN === '1' && await visibleLogin(page)) await login(page);   // off until Housebets fixes demo/security check
+  if (process.env.AUTO_LOGIN !== '0' && await visibleLogin(page)) await login(page);
+  else if (shared.loggedOut && !(await visibleLogin(page))) { shared.loggedOut = false; log('logged in again'); tellBrain(''); }
 }
 
 (async () => {

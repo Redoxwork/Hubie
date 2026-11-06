@@ -277,7 +277,8 @@ module.exports = function startPlayer(page, shared) {
   shared.playing = true;
   sniff(page);
   let autoDiagDone = false; let current = 'dice', until = Date.now(), fails = 0, rounds = 0, ui = page.mainFrame(), announced = '', announcedAt = 0, diagDone = {};
-  const tell = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
+  const tellRaw = (type, q) => fetch(`${BRAIN}/event?type=${type}&${new URLSearchParams(q)}`, { signal: AbortSignal.timeout(3000) }).catch(() => {});
+  const tell = (type, q) => { if (type === 'round') shared.lastRound = Date.now(); return tellRaw(type, q); };
   const slots = require('./slots')({ page, shared, base: BASE, tell });
   let nextSlotBreak = Date.now() + rand(50, 70) * 60e3;
   const level = {}, bestLevel = {};
@@ -392,7 +393,12 @@ module.exports = function startPlayer(page, shared) {
     await open('dice');
     for (;;) {
       await sleep(rand(4000, 7000));
-      if (shared.blocked || shared.lounge) continue;
+      if (shared.blocked || shared.lounge || shared.loggedOut || shared.loggingIn) { shared.lastRound = Date.now(); continue; }
+      // stall watchdog: no round for 12 min -> reopen the game; 25 min -> restart the game bot
+      const idle = Date.now() - (shared.lastRound || Date.now());
+      if (idle > 25 * 60e3) { log('watchdog: no rounds for 25 min, restarting the game bot'); process.exit(3); }
+      if (idle > 12 * 60e3 && !shared.reopened) { shared.reopened = true; log('watchdog: no rounds for 12 min, reopening the game'); await open(current === 'dice' ? 'limbo' : 'dice'); continue; }
+      if (idle < 60e3) shared.reopened = false;
       try {
         // chat request first, then rotation
         const q = await fetch(`${BRAIN}/queue`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null);
