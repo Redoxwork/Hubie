@@ -18,20 +18,20 @@ const GAMES = {
   coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], auto: true, button: /^(bet|flip)$/i, weight: 2,
               prep: async page => { await clickText(page, Math.random() < 0.5 ? /^\s*heads\s*$/i : /^\s*tails\s*$/i); await setRange(page, /coins/, pick([1, 1, 1, 2, 3])); await setRange(page, /flips/, pick([1, 1, 2, 3])); } },
   plinko:   { name: 'Plinko',   slugs: ['plinko'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|drop)$/i, weight: 2,
-              prep: page => setRange(page, /^\s*rows/, pick([8, 10, 12, 12, 14])) },
+              prep: page => setRange(page, /^\s*rows/, pick([10, 12, 12, 14, 16])) },
   wheel:    { name: 'Wheel',    slugs: ['wheel'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|spin)$/i, weight: 2,
-              prep: page => setRange(page, /segments/, pick([10, 20, 30, 30, 40, 50])) },
+              prep: page => setRange(page, /segments/, pick([20, 30, 40, 40, 50])) },
   keno:     { name: 'Keno',     slugs: ['keno'], auto: true, risk: ['classic', 'low', 'medium', 'high'], button: /^bet$/i, weight: 5,
               prep: page => kenoPick(page) },
   maxwin:   { name: 'Max Win',  slugs: ['maxwin', 'max-win'], auto: true, button: /^(bet|spin)$/i, weight: 1 },
   crash:    { name: 'Crash',    slugs: ['crash'], button: /^\s*(bet|place bet|bet \(next round\)|join)\s*$/i, weight: 2, crash: true,
-              prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out/i, pick(['1.5', '2', '2', '3', '5', '10'])) },
+              prep: page => setByLabel(page, /cash ?out at|auto ?cash ?out/i, pick(['1.5', '2', '3', '5', '10', '10', '25', '50', '100'])) },
   // games with steps inside a round: start, take a few steps, cash out
   road:     { name: "Hubie's Road", slugs: ['hubies-road', 'hubiesroad', 'road'], button: /^(bet|play|start)$/i, weight: 3,
-              steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 1, max: 3, cap: 8, cash: /^cash ?out/i } },
+              steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 2, max: 5, cap: 12, cash: /^cash ?out/i } },
   tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2, risk: ['easy', 'medium', 'hard'],
-              steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 4, cap: 8, cash: /^cash ?out/i } },
-  mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, pick([1, 2, 2, 3, 3, 4, 5, 6])), button: /^(bet|play)$/i, weight: 5, mines: [1, 2, 3, 3, 4, 5, 8],
+              steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 2, max: 5, cap: 9, cash: /^cash ?out/i } },
+  mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, pick([1, 2, 2, 3, 3, 4, 5, 6])), button: /^(bet|play)$/i, weight: 5, mines: [2, 3, 4, 5, 5, 8, 10, 12],
               steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 3, cap: 10, cash: /^cash ?out/i, board: true } },
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
               steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
@@ -510,7 +510,7 @@ module.exports = function startPlayer(page, shared) {
     const pref = await fetch(`${BRAIN}/prefs`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => ({}));
     if (g.risk) {
       let r = pref.risk && g.risk.includes(pref.risk) ? pref.risk : null;
-      if (!r) r = pick(g.risk.flatMap(x => Array(x === 'medium' || x === 'classic' ? 3 : 1).fill(x)));
+      if (!r) r = pick(g.risk.flatMap(x => Array(x === 'high' || x === 'hard' ? 3 : x === 'medium' || x === 'classic' ? 2 : 1).fill(x)));
       await clickText(ui, new RegExp('^' + r + '$', 'i'));
       riskNow = r; tell('setting', { game: g.name, risk: r, by: pref.by || '' });
     }
@@ -526,7 +526,7 @@ module.exports = function startPlayer(page, shared) {
   async function setTarget(key) {
     if (key !== 'limbo' && key !== 'dice') return true;
     const c = await getChal();
-    const want = key === c.game ? String(c.target) : key === 'limbo' ? pick(['2', '3', '5', '10', '10', '25', '50', '100']) : pick(['2', '2', '3', '5', '10']);
+    const want = key === c.game ? String(c.target) : key === 'limbo' ? pick(['2', '3', '5', '10', '10', '25', '50', '100']) : key === 'dice' ? pick(['2', '3', '5', '10', '10', '25', '50']) : null;
     if (!want) return true;
     const got = await setByLabel(ui, /multiplier/i, want);
     return got !== null && Number(got) === Number(want);
