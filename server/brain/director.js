@@ -35,7 +35,7 @@ function forVoice(t) {
     .replace(/(https?:\/\/)?(www\.)?housebets\.com(\/[\w\/-]*)?/gi, 'housebets dot com').replace(/begambleaware\.org/gi, 'begamble aware dot org')
     .replace(/\b18\+/g, '18 plus').replace(/!play\b/gi, 'play').replace(/\bu\b/gi, 'you').replace(/\bur\b/gi, 'your')
     .replace(/\bu'?re\b/gi, "you're").replace(/\bpls\b/gi, 'please').replace(/\blol\b/gi, 'haha')
-    .replace(/\b(ha){2,}h?\b[!.]*|\bhah\b[!.]*/gi, () => { const l = (process.env.HUBIE_LAUGH || 'hah hah!').split('|'); return l[Math.floor(Math.random() * l.length)]; })
+    .replace(/\b(ha){2,}h?\b[!.,]*|\bhah\b[!.,]*|\bheh(eh)*\b[!.,]*|\blmao\b[!.,]*/gi, () => { if (!process.env.HUBIE_LAUGH) return ''; const l = process.env.HUBIE_LAUGH.split('|'); return l[Math.floor(Math.random() * l.length)]; })   // fake TTS laughs sound bad: silent unless a spelling is chosen
     .replace(/\bgg\b/gi, 'G G').replace(/\s+/g, ' ').trim();
 }
 const cleanName = n => (!n || BAD_WORDS.test(n)) ? 'someone' : String(n).replace(/[^\w.-]/g, '').slice(0, 25) || 'someone';
