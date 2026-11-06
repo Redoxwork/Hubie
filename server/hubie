@@ -66,6 +66,12 @@ case "${1:-help}" in
     out="$H/shots/laughs-$(date +%m%d-%H%M)"; mkdir -p "$out"
     "$H/tts/venv/bin/python" "$H/server/tts_samples.py" laughs "$H/tts" "$out" && chown -R hubie:hubie "$out" && bash "$H/server/shots.sh" ;;
 
+  laugh-clips)   # hubie laugh-clips <sound page url> ... : fetch, cut, preview
+    shift; runuser -u hubie -- env HUBIE_DIR="$H" node "$H/server/laughs.js" "$@" && systemctl restart hubie-brain && bash "$H/server/shots.sh" ;;
+
+  laugh-keep)    # hubie laugh-keep laugh1 chuckle3 : keep only these clips
+    shift; cd "$H/tts/laughs" && for f in *.mp3; do keep=0; for k in "$@"; do [ "${f%.mp3}" = "$k" ] && keep=1; done; [ $keep = 1 ] || rm -f "$f"; done; ls *.mp3; systemctl restart hubie-brain ;;
+
   kick-login)
     host=$(head -1 /etc/caddy/Caddyfile 2>/dev/null | tr -d ' {')
     if ! curl -fs http://127.0.0.1:8090/health >/dev/null || [ -z "$host" ]; then echo "Brain not running. Re-run the setup line."; exit 1; fi
@@ -93,5 +99,5 @@ case "${1:-help}" in
     curl -fs -G http://127.0.0.1:8090/test/follow --data-urlencode "name=${2:-tester}" && echo " sent" ;;
 
   *)
-    echo "hubie live | stop [all] | secrets | voices | laughs | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
+    echo "hubie live | stop [all] | secrets | voices | laughs | laugh-clips <urls> | laugh-keep <names> | kick-login | status | brain-log | chat <name> <msg> | follow <name> | game guess|poll | set-info | test-login | test-stream [minutes] | log | stop | shots | update" ;;
 esac
