@@ -63,8 +63,8 @@ start_game(){
 brain_up(){ curl -fs --max-time 3 http://127.0.0.1:8090/health >/dev/null; }
 start_avatar(){
   for i in $(seq 1 30); do brain_up && break; sleep 2; done      # wait up to 60 s for the brain
-  local av="file://$H/avatar/hubie-avatar-demo.html?overlay=1&keyed=1"
-  if brain_up; then av="http://127.0.0.1:8090/avatar/hubie-avatar-demo.html?overlay=1&keyed=1&ws=ws://127.0.0.1:8090/ws"; AV_LINKED=1
+  local av="file://$H/avatar/hubie-avatar-demo.html?overlay=1&keyed=1$AVCOL"
+  if brain_up; then av="http://127.0.0.1:8090/avatar/hubie-avatar-demo.html?overlay=1&keyed=1$AVCOL&ws=ws://127.0.0.1:8090/ws"; AV_LINKED=1
   else AV_LINKED=0; log "avatar: brain not up yet, starting without it (watchdog will reconnect)" >&2; fi
   DISPLAY=:98 "${CH[@]}" --user-data-dir="$RUN/chrome-avatar" --remote-debugging-port=9223 "$av" >/dev/null 2>&1 & echo $!
 }
@@ -89,13 +89,16 @@ FONT=/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf
 [ -f "$FONT" ] || FONT=/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf
 LABEL=",drawtext=fontfile=$FONT:textfile=$RUN/uptime.txt:reload=1:x=w-tw-14:y=h-th-40:fontsize=15:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=6"
 [ "${SHOW_UPTIME:-1}" = 0 ] && LABEL=""
+# streamer layout: the game a bit smaller on the left, a column on the right for Hubie's cam + chat (LAYOUT=full: game full screen)
+if [ "${LAYOUT:-col}" = col ]; then BASE="[0:v]scale=1024:576:flags=bicubic[gs];color=c=0x0a1216:s=1280x720:r=30[bg];[bg][gs]overlay=0:0:shortest=1[g];"; AVCOL="&col=1"
+else BASE="[0:v]null[g];"; AVCOL=""; fi
 renderer(){
   while :; do
     ffmpeg -hide_banner -loglevel error -nostdin \
       -thread_queue_size 1024 -f x11grab -framerate 30 -video_size 1280x720 -draw_mouse 0 -i :99 \
       -thread_queue_size 1024 -f x11grab -framerate 30 -video_size 1280x720 -draw_mouse 0 -i :98 \
       -thread_queue_size 1024 "${AUDIO_IN[@]}" \
-      -filter_complex "[1:v]colorkey=0x00FF00:0.30:0.08[av];[0:v][av]overlay=format=auto${LABEL},format=yuv420p[v]" \
+      -filter_complex "$BASE[1:v]colorkey=0x00FF00:0.30:0.08[av];[g][av]overlay=format=auto${LABEL},format=yuv420p[v]" \
       -map "[v]" -map 2:a -af aresample=async=1000 -fps_mode cfr -r 30 \
       -c:v libx264 -preset veryfast -tune zerolatency -bf 0 -b:v ${VBITRATE:-4500}k -maxrate ${VBITRATE:-4500}k -bufsize $(( ${VBITRATE:-4500} * 2 ))k \
       -g 60 -keyint_min 60 -sc_threshold 0 -c:a aac -b:a 128k -ar 44100 -f flv "$RELAY"

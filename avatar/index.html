@@ -53,6 +53,15 @@
   .chatbox .m b{color:var(--teal);margin-right:.35em}
   .chatbox .m.me{border-color:#6b5520}.chatbox .m.me b{color:var(--gold)}
   .chatbox .m.out{opacity:0;transition:opacity .8s}
+  /* column layout: game shrunk to the left 80%, Hubie + chat own the right column */
+  body.col.overlay.mode-cam .caption, body.col.overlay.mode-cam .replyto, body.col.overlay.mode-cam .chatbox{width:100%;margin-left:0}
+  body.col .chatbox{background:#071116e6;border:2px solid #2b6b78;border-radius:12px;padding:.45em;min-height:9vh;max-height:44vh;font-size:clamp(10px,1.12vw,21px)}
+  body.col .chatbox::before{content:"💬 CHAT";color:var(--teal);font-weight:700;font-size:.8em;letter-spacing:.08em;margin:0 0 .1em .2em}
+  body.col .chatbox:empty::after,body.col .chatbox.quiet::after{content:"chat's quiet… say hi 👋";color:#7d9aa3;font-size:.9em;margin-left:.2em}
+  body.col:has(.gamebox.on) .chatbox{max-height:15vh}
+  .cmdhint{display:none}
+  body.col.overlay .cmdhint{display:block;position:absolute;left:1.2%;top:81.6%;z-index:3;font-size:clamp(9px,1.05vw,20px);color:#9fb9c0;font-weight:600}
+  .cmdhint b{color:var(--teal);font-weight:700}
   @keyframes chatIn{from{transform:translateX(18px);opacity:0}to{transform:none;opacity:1}}
   #celebrate{position:fixed;inset:0;z-index:6;pointer-events:none}
   .winbanner{position:fixed;left:50%;top:38%;z-index:7;transform:translate(-50%,-50%) scale(.2);opacity:0;pointer-events:none;text-align:center;
@@ -132,6 +141,7 @@
   </div>
   <div class="gamebox" id="gamebox"></div>
   <div class="statbar" id="statbar"></div>
+  <div class="cmdhint">pick my next game: <b>!mines</b> <b>!limbo</b> <b>!keno</b> <b>!dice</b> <b>!plinko</b> <b>!tower</b> <b>!blackjack</b> <b>!crash</b> · chat with me: just say <b>hubie</b></div>
   <canvas id="celebrate"></canvas>
   <div class="winbanner" id="winbanner"></div>
   <div class="banner"><span><b>18+</b> only</span><span>Demo play, no real money</span><span>Please gamble responsibly</span></div>
@@ -171,6 +181,7 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
   const params = new URLSearchParams(location.search);
   if (params.get('overlay') === '1') document.body.classList.add('overlay');
   if (params.get('keyed') === '1') document.body.classList.add('keyed');
+  if (params.get('col') === '1') document.body.classList.add('col');
   function setLayout(m){ document.body.classList.toggle('mode-full', m==='full'); document.body.classList.toggle('mode-cam', m!=='full');
     const btn = document.getElementById('bMode'); if (btn) btn.textContent = m==='full' ? 'Switch to cam view' : 'Switch to full body'; }
   let layout = params.get('mode') === 'full' ? 'full' : 'cam';
@@ -514,8 +525,11 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
     const d = document.createElement('div'); d.className = 'm' + (me ? ' me' : '');
     d.innerHTML = `<b>${esc(who)}</b>${esc(text)}`;
     chatEl.appendChild(d);
-    while (chatEl.children.length > 6) chatEl.removeChild(chatEl.firstChild);
-    setTimeout(()=>{ d.classList.add('out'); setTimeout(()=>d.remove(), 900); }, me ? 30000 : 45000);
+    const keepN = document.body.classList.contains('col') ? 9 : 6;
+    while (chatEl.children.length > keepN) chatEl.removeChild(chatEl.firstChild);
+    chatEl.classList.remove('quiet');
+    const life = document.body.classList.contains('col') ? 4 * 60000 : (me ? 30000 : 45000);   // in the column it stays like a real chat
+    setTimeout(()=>{ d.classList.add('out'); setTimeout(()=>{ d.remove(); if (!chatEl.children.length) chatEl.classList.add('quiet'); }, 900); }, life);
   }
   function connect(url){
     let ws; try { ws = new WebSocket(url); } catch(e){ return; }
