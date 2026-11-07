@@ -805,7 +805,7 @@ module.exports = function startPlayer(page, shared) {
           continue;
         }
         if (want) { await open(want, q.by); continue; }
-        if (process.env.SLOTS === '1' && Date.now() > nextSlotBreak) {  // now and then, a slot break from Hubie's list
+        if (process.env.SLOTS === '1' && process.env.SLOT_BREAKS === '1' && Date.now() > nextSlotBreak) {  // optional slot break (off by default: House Originals only)
           nextSlotBreak = Date.now() + rand(80, 110) * 60e3;
           await slots.play(slots.favourite()); await open(nextGame()); continue;
         }
