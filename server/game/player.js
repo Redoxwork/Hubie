@@ -654,18 +654,19 @@ module.exports = function startPlayer(page, shared) {
     }
     log('game links found:', Object.entries(gameUrls).map(([k, u]) => `${k}=${u.replace(BASE, '')}`).join(' '));
   }
-  const recent = [];
+  const recent = [], lastOpened = {}, bootT = Date.now();
   function nextGame() {
     const ok = k => !(benched[k] > Date.now());
-    if (chal.game && GAMES[chal.game] && chal.game !== current && ok(chal.game) && Math.random() < 0.75) return chal.game;   // mostly: go after the current challenge
+    if (chal.game && GAMES[chal.game] && chal.game !== current && ok(chal.game) && Math.random() < 0.55) return chal.game;   // often: go after the current challenge
     const keys = Object.keys(GAMES).filter(k => k !== current && ok(k) && recent.filter(r => r === k).length < 2);
     if (!keys.length) return 'dice';
-    const bag = keys.flatMap(k => Array(GAMES[k].weight).fill(k));
+    // variety: a game not seen for a while gets a bigger chance (x2 after 1h, x4 after 2h+), so every Original shows up
+    const bag = keys.flatMap(k => { const h = (Date.now() - (lastOpened[k] || bootT - 3600e3)) / 3600e3; return Array(GAMES[k].weight * (h >= 2 ? 4 : h >= 1 ? 2 : 1)).fill(k); });
     return pick(bag);
   }
   async function open(key, by) {
     recent.push(key); if (recent.length > 5) recent.shift();
-    current = key; until = Date.now() + (key === chal.game ? 25 : rand(5, 10)) * 60e3; fails = 0; openedAt = Date.now();
+    lastOpened[key] = Date.now(); current = key; until = Date.now() + (key === chal.game ? 25 : rand(5, 10)) * 60e3; fails = 0; openedAt = Date.now();
     log('opening', GAMES[key].name, by ? `(requested by ${by})` : '');
     let ok = false;
     const urls = [...(goodUrls[key] ? [goodUrls[key]] : []), ...GAMES[key].slugs.map(sl => `${BASE}/games/housegames-${sl}`), ...(gameUrls[key] ? [gameUrls[key]] : [])];

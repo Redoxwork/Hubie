@@ -17,7 +17,7 @@ echo "security check:  $(c "$L" 'security check stuck') stuck · lounge $(c "$L"
 echo "self-repairs:    $(c "$L" 'watchdog:') (screens/windows/stream/game bot)"
 printf '%s\n' "$L" | grep -oE 'watchdog: [a-z ]+' | sort | uniq -c | sort -rn | head -6 | sed 's/^/                 /'
 echo "safety stops:    $(c "$L" 'BET BOX NOT 0|bet box not confirmed')"
-echo "AI:              gemini limit hits $(c "$B" 'status 429|429') · backup used $(c "$B" 'using openrouter') · Kick token refresh fails $(c "$B" 'refresh failed')"
+echo "AI:              gemini limit hits $(c "$B" 'status 429|429') · backup calls ~$(echo "$B" | grep -o 'using openrouter backup ([0-9]*' | tail -1 | grep -o '[0-9]*$' || echo 0) · Kick token refresh fails $(c "$B" 'refresh failed')"
 echo "last health:     $(printf '%s\n' "$L" | grep 'health:' | tail -1 | cut -c12-)"
 echo "last memory:     $(printf '%s\n' "$L" | grep 'memory:' | tail -1 | cut -c20-)"
 echo "first memory:    $(printf '%s\n' "$L" | grep 'memory:' | head -1 | cut -c20-)"
