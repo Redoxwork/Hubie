@@ -79,6 +79,11 @@ case "${1:-help}" in
   archive)   # list the saved 480p hours of the run
     ls -lh /opt/hubie/archive 2>/dev/null | tail -n +2 | awk '{print $5, $9}'; echo; du -sh /opt/hubie/archive /opt/hubie/recordings 2>/dev/null; df -h /opt/hubie | tail -1 ;;
 
+  title)   # hubie title "<stream title>" [category] : set the Kick stream title (and category)
+    shift; t="${1:-}"; c="${2:-}"
+    [ -z "$t" ] && { echo 'usage: hubie title "your stream title" ["Slots & Casino"]'; exit 1; }
+    curl -fsS -G --max-time 20 http://127.0.0.1:8090/info --data-urlencode "title=$t" ${c:+--data-urlencode "category=$c"} && echo || echo "could not set it (is the brain running and Kick connected?)" ;;
+
   report)   # how the run is going since the last 'hubie live'
     bash "$H/server/report.sh" ;;
 
