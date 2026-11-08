@@ -16,7 +16,7 @@ const NEVER = /deposit|withdraw|cashier|wallet|buy|purchase|real money|autobet|a
 const GAMES = {
   dice:     { name: 'Dice',     slugs: ['dice'], auto: true, button: /^(roll|bet)$/i, weight: 3 },
   limbo:    { name: 'Limbo',    slugs: ['limbo'], auto: true, button: /^bet$/i, weight: 6 },
-  coinflip: { name: 'Coinflip', slugs: ['coinflip', 'coin-flip'], auto: true, button: /^(bet|flip)$/i, weight: 2,
+  coinflip: { name: 'Coinflip', slugs: ['coin-flip', 'coinflip'], auto: true, button: /^(bet|flip)$/i, weight: 2,
               prep: async page => { await clickText(page, Math.random() < 0.5 ? /^\s*heads\s*$/i : /^\s*tails\s*$/i); await setRange(page, /coins/, pick([1, 1, 1, 2, 3])); await setRange(page, /flips/, pick([1, 1, 2, 3])); } },
   plinko:   { name: 'Plinko',   slugs: ['plinko'], auto: true, risk: ['low', 'medium', 'high'], button: /^(bet|drop)$/i, weight: 2,
               prep: page => setRange(page, /^\s*rows/, pick([10, 12, 12, 14, 14])) },
