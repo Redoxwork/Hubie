@@ -89,8 +89,10 @@ FONT=/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf
 [ -f "$FONT" ] || FONT=/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf
 LABEL=",drawtext=fontfile=$FONT:textfile=$RUN/uptime.txt:reload=1:x=w-tw-14:y=h-th-40:fontsize=15:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=6"
 [ "${SHOW_UPTIME:-1}" = 0 ] && LABEL=""
+# encoder speed: small servers (<8 cores) use a lighter preset so video keeps up with the sound
+XPRESET=${X264_PRESET:-$( [ "$(nproc)" -lt 8 ] && echo superfast || echo veryfast )}
 # streamer layout: the game a bit smaller on the left, a column on the right for Hubie's cam + chat (LAYOUT=full: game full screen)
-if [ "${LAYOUT:-col}" = col ]; then BASE="[0:v]scale=1024:576:flags=bicubic[gs];color=c=0x0a1216:s=1280x720:r=30[bg];[bg][gs]overlay=0:0:shortest=1[g];"; AVCOL="&col=1"
+if [ "${LAYOUT:-col}" = col ]; then BASE="[0:v]scale=1024:576:flags=bilinear[gs];color=c=0x0a1216:s=1280x720:r=30[bg];[bg][gs]overlay=0:0:shortest=1[g];"; AVCOL="&col=1"
 else BASE="[0:v]null[g];"; AVCOL=""; fi
 renderer(){
   while :; do
@@ -100,7 +102,7 @@ renderer(){
       -thread_queue_size 1024 "${AUDIO_IN[@]}" \
       -filter_complex "$BASE[1:v]colorkey=0x00FF00:0.30:0.08[av];[g][av]overlay=format=auto${LABEL},format=yuv420p[v]" \
       -map "[v]" -map 2:a -af aresample=async=1000 -fps_mode cfr -r 30 \
-      -c:v libx264 -preset veryfast -tune zerolatency -bf 0 -b:v ${VBITRATE:-4500}k -maxrate ${VBITRATE:-4500}k -bufsize $(( ${VBITRATE:-4500} * 2 ))k \
+      -c:v libx264 -preset $XPRESET -tune zerolatency -bf 0 -b:v ${VBITRATE:-4500}k -maxrate ${VBITRATE:-4500}k -bufsize $(( ${VBITRATE:-4500} * 2 ))k \
       -g 60 -keyint_min 60 -sc_threshold 0 -c:a aac -b:a 128k -ar 44100 -f flv "$RELAY"
     log "renderer stopped (code $?), restarting"; sleep 2
   done
