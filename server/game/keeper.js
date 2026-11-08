@@ -107,7 +107,8 @@ async function tick(page) {
     }
     return;
   }
-  if (!/housebets\.com/.test(url) || /404|not found|error/i.test(title)) {
+  const playerBusy = shared.opening && Date.now() - shared.opening < 3 * 60e3;   // the game bot is switching pages: its 404s are its own business
+  if (!/housebets\.com/.test(url) || (!playerBusy && Date.now() - (shared.lastRound || 0) > 5 * 60e3 && /404|not found|error/i.test(title))) {
     log('page is off (', url, title, ') -> back to', GAME_URL);
     await page.goto(GAME_URL, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('goto failed', e.message));
     return;

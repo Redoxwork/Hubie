@@ -35,7 +35,7 @@ const GAMES = {
               steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 1, max: 3, cap: 10, cash: /^cash ?out/i, board: true } },
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
               steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
-  blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^(bet|deal)$/i, weight: 2, bj: true },
+  blackjack:{ name: 'Blackjack', slugs: ['blackjack'], button: /^\s*(bet|deal|place bet|play)\s*$/i, weight: 2, bj: true },
   baccarat: { name: 'Baccarat', slugs: ['baccarat'], button: /^\s*(bet|deal)\b(?!\s*amount)/i, weight: 1,
               prep: page => clickText(page, Math.random() < 0.6 ? /^banker\b/i : /^player\b/i) },
   roulette: { name: 'Roulette', slugs: ['roulette'], button: /^\s*(bet|spin)\b(?!\s*amount)/i, weight: 1,
@@ -668,8 +668,9 @@ module.exports = function startPlayer(page, shared) {
     recent.push(key); if (recent.length > 5) recent.shift();
     lastOpened[key] = Date.now(); current = key; until = Date.now() + (key === chal.game ? 25 : rand(5, 10)) * 60e3; fails = 0; openedAt = Date.now();
     log('opening', GAMES[key].name, by ? `(requested by ${by})` : '');
+    shared.opening = Date.now();
     let ok = false;
-    const urls = [...(goodUrls[key] ? [goodUrls[key]] : []), ...GAMES[key].slugs.map(sl => `${BASE}/games/housegames-${sl}`), ...(gameUrls[key] ? [gameUrls[key]] : [])];
+    const urls = [...(goodUrls[key] ? [goodUrls[key]] : []), ...(gameUrls[key] ? [gameUrls[key]] : []), ...GAMES[key].slugs.map(sl => `${BASE}/games/housegames-${sl}`)];   // known links first, guesses last
     for (const url of [...new Set(urls)]) {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => log('open failed', e.message));
       await sleep(4000);
@@ -682,7 +683,7 @@ module.exports = function startPlayer(page, shared) {
       if (by) tell('unknown', { game: GAMES[key].name, by });
       bench(key, 'no page'); const nk = nextGame(); if (nk !== key) return open(nk);
     }
-    ui = await findUI(page);
+    ui = await findUI(page); shared.opening = 0;
     await clickText(ui, /^manual$/i);
     tell('game', { game: GAMES[key].name, by: by || '' });
     await applySettings(key);
@@ -727,7 +728,7 @@ module.exports = function startPlayer(page, shared) {
     await sleep(3000);
     const t0 = Date.now(); let why = 'done', lastQ = 0, lastLog = Date.now(); let speedCheck = null, lastView = 0;
     while (Date.now() - t0 < Math.min(n * 4000 + 30000, MAX_MS)) {
-      await sleep(1000);
+      await sleep(1000); shared.beat = Date.now();
       if (Date.now() - lastView > 10e3) { lastView = Date.now(); const kv = await keepInView(ui); if (kv && kv !== 'ok') log('view: game was off screen, scrolled back', kv); }
       const v = await readBet(ui);
       if (v !== null && v !== '' && parseFloat(v) !== 0) { log('auto: BET BOX NOT 0, stopping now'); why = 'safety'; break; }
@@ -784,7 +785,12 @@ module.exports = function startPlayer(page, shared) {
     current = '';
     await findGames().catch(e => log('findGames', e.message));
     { const keep = chal; chal = {}; current = 'dice'; const first = GAMES[process.env.START_GAME] ? process.env.START_GAME : nextGame(); current = ''; await open(first); chal = keep; }   // start on a random original (or START_GAME)
+    setInterval(() => {                              // frozen (a hung page call): no loop beat and no rounds for 8 min -> restart the game bot
+      const quiet = Date.now() - Math.max(shared.beat || 0, shared.lastRound || 0);
+      if (quiet > 8 * 60e3 && !shared.blocked && !shared.loggingIn && !shared.lounge) { log('watchdog: game bot frozen for 8 min, restarting it'); setTimeout(() => process.exit(1), 500); }
+    }, 60e3);
     for (;;) {
+      shared.beat = Date.now();
       await sleep(rand(4000, 7000));
       { const v = await keepInView(ui); if (v && v !== 'ok') log('view: game was off screen, scrolled back', v); }
       if (shared.blocked || shared.lounge || shared.loggedOut || shared.loggingIn) { shared.lastRound = Date.now(); continue; }
@@ -857,7 +863,7 @@ module.exports = function startPlayer(page, shared) {
               log('round stuck on', g.name, ': reloading'); await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page);
             }
             await sleep(2000); continue; }
-          if (++fails >= 5) { log('no play button on', g.name); bench(current, 'no play button'); await open(nextGame()); } continue; }
+          if (++fails >= 5) { log('no play button on', g.name); if (!diagDone['btn_' + current]) { diagDone['btn_' + current] = 1; await diag(page); } bench(current, 'no play button'); await open(nextGame()); } continue; }
         let stepInfo = null;
         const t0 = Date.now(); await b.click({ timeout: 3000 });
         if (g.bj) await playBlackjack(ui, tell);
