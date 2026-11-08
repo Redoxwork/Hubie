@@ -63,6 +63,63 @@
   .cmdhint{display:none}
   body.col.overlay .cmdhint{display:block;position:absolute;left:1.2%;top:81.6%;z-index:3;font-size:clamp(9px,1.05vw,20px);color:#9fb9c0;font-weight:600}
   .cmdhint b{color:var(--teal);font-weight:700}
+
+  /* ===== Hubie HQ (column layout): framed game, brain bar, live cam ===== */
+  .hq{display:none}
+  body.col.overlay .hq{display:block}
+  body.col.overlay .brain{display:grid}
+  body.col.overlay .statbar, body.col.overlay .cmdhint{display:none !important}
+  .gframe{position:absolute;left:0;top:0;width:80%;height:80%;z-index:2;pointer-events:none;box-sizing:border-box;
+    border:3px solid #2b8a96;border-radius:0 0 14px 0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 22px rgba(92,225,230,.25)}
+  .gframe.gold{animation:framePulse 3.2s ease-out}
+  @keyframes framePulse{0%,100%{border-color:#2b8a96;box-shadow:0 0 22px rgba(92,225,230,.25)}15%,60%{border-color:#ffd35a;box-shadow:0 0 46px rgba(255,211,90,.75),inset 0 0 30px rgba(255,211,90,.35)}}
+  .sticky{position:absolute;left:12%;top:10%;z-index:4;background:#ffe27a;color:#3a2a00;font-weight:800;padding:.55em .9em .6em;border-radius:3px;
+    font-size:clamp(11px,1.3vw,24px);transform:rotate(-3deg) scale(.6);opacity:0;box-shadow:0 8px 18px rgba(0,0,0,.45);max-width:24%;line-height:1.2}
+  .sticky::before{content:"📌";position:absolute;top:-.75em;left:46%}
+  .sticky.on{animation:stick 7s ease forwards}
+  .brain .think.note{animation:noteOn 7s ease forwards}
+  .brain .think.note::after{content:"📌";position:absolute;right:.5em;top:.25em;font-size:1.05em}
+  @keyframes noteOn{0%{transform:scale(1.03);border-color:#ffd35a;box-shadow:0 0 26px rgba(255,211,90,.6)}
+    10%,85%{transform:none;border-color:#e0b53d;background:linear-gradient(180deg,#2a2410f2,#14130af2);box-shadow:0 0 16px rgba(255,211,90,.35)}
+    100%{border-color:#1f4b55;box-shadow:none}}
+  .brain .think.note .lbl{color:var(--gold)}
+  @keyframes stick{0%{opacity:0;transform:rotate(-12deg) scale(.4)}8%{opacity:1;transform:rotate(-2deg) scale(1.06)}14%{transform:rotate(-3deg) scale(1)}88%{opacity:1}100%{opacity:0;transform:rotate(-3deg) translateY(-12px)}}
+  .brain{position:absolute;left:.7%;width:78.6%;top:81.4%;height:12.6%;z-index:3;display:grid;grid-template-columns:1.25fr 1.7fr 1.45fr 1fr;gap:.6%;
+    font-size:clamp(9px,1vw,19px);color:#d8eef0}
+  .brain .card{background:linear-gradient(180deg,#0c1d24f2,#08151af2);border:1.5px solid #1f4b55;border-radius:11px;padding:.45em .7em;overflow:hidden;position:relative}
+  .brain .lbl{font-size:.72em;font-weight:800;letter-spacing:.12em;color:var(--teal);text-transform:uppercase;margin-bottom:.25em;display:flex;justify-content:space-between}
+  .brain .lbl span{color:#7fa3aa;letter-spacing:.04em;font-weight:700}
+  .brain .val{font-weight:700;font-size:1.08em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brain .prog{height:.5em;background:#12313b;border-radius:.3em;overflow:hidden;margin-top:.45em}
+  .brain .prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--teal),var(--gold));transition:width .6s}
+  .brain .think .val{white-space:normal;font-weight:600;font-style:italic;color:#e9f6f7;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .brain .think .val.new{animation:thinkIn .5s ease-out}
+  @keyframes thinkIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .brain .dots::after{content:"";animation:dots 1.4s steps(4) infinite}
+  @keyframes dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+  .chips{display:flex;gap:.3em;flex-wrap:nowrap;overflow:hidden;margin-top:.15em}
+  .chips b{flex:none;font-size:.82em;padding:.18em .45em;border-radius:20px;font-weight:800;background:#3a1518;color:#ff8f8f;border:1px solid #6a2a2e}
+  .chips b.w{background:#0f3328;color:#6ff0b9;border-color:#1e6b52}
+  .chips b.big{background:#3d3008;color:#ffd35a;border-color:#8a6a10;box-shadow:0 0 10px rgba(255,211,90,.5)}
+  .brain .live .val{font-size:1.45em;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  .brain .live .sub{font-size:.7em;color:#8fb3b9;font-weight:700;letter-spacing:.06em;margin-top:.2em}
+  .brain .live .lbl i{display:inline-block;width:.6em;height:.6em;border-radius:50%;background:#ff4d4d;box-shadow:0 0 8px #ff4d4d;margin-right:.35em;animation:blink 1.6s infinite}
+  @keyframes blink{50%{opacity:.35}}
+  .mood{position:absolute;right:4%;top:4%;z-index:3;font-size:clamp(12px,5.5cqw,30px);background:rgba(0,0,0,.5);border-radius:50%;width:1.6em;height:1.6em;
+    display:none;align-items:center;justify-content:center;transition:transform .3s}
+  body.col.overlay .mood{display:flex}
+  .mood.pop{transform:scale(1.35)}
+  .chathint{display:none}
+  body.col.overlay .chathint{display:block;margin-top:.4em;text-align:center;font-size:clamp(9px,.9vw,17px);color:#8fb3b9;background:#071116e6;border:1.5px solid #1f4b55;border-radius:9px;padding:.3em}
+  .chathint b{color:var(--teal)}
+  /* hat over the frame: the cam only clips the sides and the bottom */
+  body.col.overlay.mode-cam .cam{overflow:visible;clip-path:inset(-24% 0 0 0 round 16px);margin-top:3.2vh}
+  body.col.overlay.mode-cam .stage{top:-25%}
+  body.col.overlay.mode-cam .tag{font-size:clamp(7px,3.4cqw,20px)}
+  /* night (00:00-06:00 Lagos): deeper colours */
+  body.col.night .brain .card, body.col.night .chatbox{background:linear-gradient(180deg,#0a1230f2,#060b1ef2);border-color:#283b78}
+  body.col.night .gframe{border-color:#3b56b3;box-shadow:0 0 22px rgba(90,120,255,.25)}
+  body.col.night .brain .lbl{color:#8ea8ff}
   @keyframes chatIn{from{transform:translateX(18px);opacity:0}to{transform:none;opacity:1}}
   #celebrate{position:fixed;inset:0;z-index:6;pointer-events:none}
   .winbanner{position:fixed;left:50%;top:38%;z-index:7;transform:translate(-50%,-50%) scale(.2);opacity:0;pointer-events:none;text-align:center;
@@ -135,12 +192,22 @@
         <canvas id="fx" width="943" height="1029"></canvas>
       </div>
       <div class="tag"><i></i>hubie</div>
+      <div class="mood" id="mood">😎</div>
     </div>
     <div class="replyto" id="replyto"><b id="rtName"></b><span id="rtText"></span></div>
     <div class="caption" id="caption"><span class="who">hubie</span><span id="capText"></span></div>
     <div class="chatbox" id="chatbox"></div>
+    <div class="chathint"><b>!play &lt;game&gt;</b> to pick my next game · say <b>hubie</b> to talk</div>
   </div>
   <div class="gamebox" id="gamebox"></div>
+  <div class="hq gframe" id="gframe"></div>
+  <div class="hq sticky" id="sticky"></div>
+  <div class="hq brain" id="brain">
+    <div class="card mission"><div class="lbl">🎯 mission <span id="bTries"></span></div><div class="val" id="bMission">picking a mission…</div><div class="prog"><i id="bProg"></i></div></div>
+    <div class="card think"><div class="lbl">💭 hubie is thinking<span class="dots"></span></div><div class="val" id="bThink">warming up the branch</div></div>
+    <div class="card"><div class="lbl">🎲 last rounds <span id="bBest"></span></div><div class="chips" id="bChips"></div><div class="val" style="font-size:.8em;margin-top:.35em;color:#8fb3b9" id="bGame"></div></div>
+    <div class="card live"><div class="lbl"><span style="color:#ff8080;letter-spacing:.12em"><i></i>ON AIR</span></div><div class="val" id="bClock">0h 00m</div><div class="sub">AI-RUN · NO HUMAN INPUT</div></div>
+  </div>
   <div class="statbar" id="statbar"></div>
   <div class="cmdhint">pick my next game: <b>!mines</b> <b>!limbo</b> <b>!keno</b> <b>!dice</b> <b>!plinko</b> <b>!tower</b> <b>!blackjack</b> <b>!crash</b> · chat with me: just say <b>hubie</b></div>
   <canvas id="celebrate"></canvas>
@@ -520,6 +587,39 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
     }
     if (rain.length) requestAnimationFrame(rainLoop); else { celOn = false; cctx.clearRect(0,0,cel.width,cel.height); }
   }
+
+  // ---------- Hubie HQ: brain bar, sticky notes, mood, clock, night ----------
+  const $h = id => document.getElementById(id);
+  let hqSince = 0; const recentR = [];
+  function hqStats(st){
+    if (!st) return;
+    if (st.since) hqSince = st.since;
+    $h('bMission').textContent = st.ch || 'picking a mission…';
+    $h('bTries').textContent = st.ch && st.max ? `try ${st.tries}/${st.max}` : '';
+    $h('bProg').style.width = st.ch && st.max ? Math.min(100, Math.round(100 * st.tries / st.max)) + '%' : '0%';
+    $h('bBest').textContent = st.best ? `best ${st.best}x` : '';
+    $h('bGame').textContent = `${st.game || ''}${st.auto ? ' · auto ' + st.auto : ''} · ${st.rounds || 0} rounds today`;
+  }
+  function hqRound(m, w){
+    recentR.unshift({ m, w }); if (recentR.length > 10) recentR.pop();
+    $h('bChips').innerHTML = recentR.map(r => `<b class="${r.w ? (r.m >= 10 ? 'big' : 'w') : ''}">${r.m}x</b>`).join('');
+  }
+  function hqThink(text, kind){
+    const v = $h('bThink'); v.textContent = text; v.classList.remove('new'); void v.offsetWidth; v.classList.add('new');
+    if (kind === 'request'){ const c = v.closest('.card'); c.classList.remove('note'); void c.offsetWidth; c.classList.add('note'); }
+  }
+  const MOOD = { win:'😄', bigwin:'🤯', loss:'😤', shock:'😱', think:'🤔', look:'👀' };
+  let moodT = 0;
+  function hqMood(kind){
+    if (!MOOD[kind]) return; const e = $h('mood'); e.textContent = MOOD[kind]; e.classList.add('pop'); setTimeout(()=>e.classList.remove('pop'), 300);
+    clearTimeout(moodT); moodT = setTimeout(()=>{ e.textContent = document.body.classList.contains('night') ? '😴' : '😎'; }, 45000);
+    if (kind === 'bigwin'){ const f = $h('gframe'); f.classList.remove('gold'); void f.offsetWidth; f.classList.add('gold'); }
+  }
+  setInterval(()=>{
+    if (hqSince){ const s = Math.max(0, Math.floor((Date.now() - hqSince) / 1000)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+      $h('bClock').textContent = `${h}h ${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s`; }
+    const lagosH = (new Date().getUTCHours() + 1) % 24; document.body.classList.toggle('night', params.get('night') ? params.get('night') === '1' : lagosH < 6);
+  }, 1000);
   // ---------- on-stream chat box ----------
   const chatEl = document.getElementById('chatbox');
   function addChat(who, text, me){
@@ -538,19 +638,21 @@ const RIG = {"manifest": {"w": 943, "h": 939, "pivot": [472.0, 480.0], "layers":
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
       if (m.type==='say') say(m.text);
       if (m.type==='speak') speakAudio(m.url, m.text).catch(()=>tell({type:'ended'}));
-      if (m.type==='react') react(m.mood);
+      if (m.type==='react') { react(m.mood); hqMood(m.mood); }
       if (m.type==='caption') showCaption(m.text, m.ms||4000);
       if (m.type==='replying') showReply(m.name, m.text);
       if (m.type==='game') showGame(m.state);
-      if (m.type==='stats') showStats(m.state);
+      if (m.type==='stats') { showStats(m.state); hqStats(m.state); }
+      if (m.type==='round') hqRound(m.mult, m.win);
+      if (m.type==='think') hqThink(m.text, m.kind);
       if (m.type==='layout') { layout = m.mode; setLayout(layout); }
       if (m.type==='chat') addChat(m.who, m.text, m.me);
-      if (m.type==='celebrate') celebrate(Number(m.x)||0, m.game);
+      if (m.type==='celebrate') { celebrate(Number(m.x)||0, m.game); hqMood('bigwin'); }
     };
     ws.onclose = () => { if (sock === ws) sock = null; setTimeout(()=>connect(url), 2000); };
   }
   if (params.get('ws')) connect(params.get('ws'));
-  window.hubie = { say, speakAudio, react, showCaption, celebrate, addChat };
+  window.hubie = { say, speakAudio, react, showCaption, celebrate, addChat, hqStats, hqRound, hqThink, hqMood, setSince: t => { hqSince = t; } };
 
   // ---------- Demo buttons ----------
   // Official Hubie vibe (from Housebets' own Hubie chat): sleepy, dry, low energy, long pauses, zero hype.
