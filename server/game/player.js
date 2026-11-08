@@ -257,9 +257,10 @@ async function diag(page) {
       const vin = D('input').filter(vis).slice(0, 6).map(x => `${x.type}|${x.name || ''}|${x.placeholder || ''}|v=${x.value}`);
       const lab = D('*').find(el => vis(el) && el.children.length <= 4 && /^\s*bet amount\s*$/i.test(el.textContent || ''));
       let p = lab; for (let i = 0; i < 3 && p && up(p); i++) p = up(p);
-      return { shadows, vin, html: p ? (p.outerHTML || '').replace(/\s+/g, ' ').replace(/ class="[^"]*"/g, '').slice(0, 600) : '(no visible Bet Amount label)' };
+      const btns = D('button,[role=button]').filter(vis).map(b => ((b.innerText || b.getAttribute('aria-label') || b.title || '').trim().replace(/\s+/g, ' ').slice(0, 24) + (b.disabled || b.getAttribute('aria-disabled') === 'true' ? '(off)' : ''))).filter(Boolean);
+      return { shadows, vin, btns: [...new Set(btns)].slice(0, 40), html: p ? (p.outerHTML || '').replace(/\s+/g, ' ').replace(/ class="[^"]*"/g, '').slice(0, 300) : '(no visible Bet Amount label)' };
     }).catch(e => ({ shadows: '?', vin: [], html: 'err ' + e.message }));
-    log('diag', f.url().slice(0, 60), `\n   shadow hosts: ${info.shadows} · playwright visible inputs: ${pw}`, '\n   visible inputs:', info.vin.join(' ; ') || 'none', '\n   html:', info.html);
+    log('diag', f.url().slice(0, 60), `\n   shadow hosts: ${info.shadows} · playwright visible inputs: ${pw}`, '\n   visible inputs:', info.vin.join(' ; ') || 'none', '\n   buttons:', (info.btns || []).join(' | ') || 'none', '\n   html:', info.html);
   }
 }
 function stopBtn(ui) { return ui.locator('button:visible').filter({ hasText: /^\s*(stop|stop auto\w*|cancel auto\w*)\b(?!\s*on)/i }).first(); }
@@ -867,7 +868,7 @@ module.exports = function startPlayer(page, shared) {
               log('round stuck on', g.name, ': reloading'); await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page);
             }
             await sleep(2000); continue; }
-          if (++fails >= 5) { log('no play button on', g.name); if (!diagDone['btn_' + current]) { diagDone['btn_' + current] = 1; await diag(page); } bench(current, 'no play button'); await open(nextGame()); } continue; }
+          if (++fails >= 5) { log('no play button on', g.name); await diag(page); bench(current, 'no play button'); await open(nextGame()); } continue; }
         let stepInfo = null;
         const t0 = Date.now(); await b.click({ timeout: 3000 });
         if (g.bj) await playBlackjack(ui, tell);
