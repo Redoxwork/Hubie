@@ -794,8 +794,13 @@ module.exports = function startPlayer(page, shared) {
       const quiet = Date.now() - Math.max(shared.beat || 0, shared.lastRound || 0);
       if (quiet > 8 * 60e3 && !shared.blocked && !shared.loggingIn && !shared.lounge) { log('watchdog: game bot frozen for 8 min, restarting it'); setTimeout(() => process.exit(1), 500); }
     }, 60e3);
+    let unstyled = 0;
     for (;;) {
       shared.beat = Date.now();
+      // page loaded without its styles (white page, raw links): reload it instead of showing it on stream
+      if (/housebets\.com/.test(page.url()) && await page.evaluate(() => [...document.querySelectorAll('a[href]')].filter(a => a.getClientRects().length && getComputedStyle(a).color === 'rgb(0, 0, 238)').length >= 5).catch(() => false)) {   // browser-default blue links = no CSS
+        if (++unstyled >= 2) { unstyled = 0; log('view: page lost its styles (white page), reloading'); await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await sleep(5000); ui = await findUI(page); continue; }
+      } else unstyled = 0;
       await sleep(rand(4000, 7000));
       { const v = await keepInView(ui); if (v && v !== 'ok') log('view: game was off screen, scrolled back', v); }
       if (shared.blocked || shared.lounge || shared.loggedOut || shared.loggingIn) { shared.lastRound = Date.now(); continue; }
