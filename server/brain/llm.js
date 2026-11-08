@@ -22,12 +22,12 @@ module.exports = ({ log }) => {
   const gKey = process.env.GEMINI_API_KEY;
   let gModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
   const gBackup = process.env.GEMINI_BACKUP_MODEL || 'gemini-3.5-flash';
-  let gPauseUntil = 0, gFails = 0;
+  let gPauseUntil = 0, gFails = 0, gNoThink = process.env.GEMINI_THINKING !== '1';   // thinking off = much faster replies
 
   async function gemini(system, prompt, retried, useModel) {
     if (!gKey || Date.now() < gPauseUntil) return null;
     const m0 = useModel || gModel;
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000);
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), Number(process.env.GEMINI_TIMEOUT_MS || 4500));
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m0}:generateContent`, {
         method: 'POST', signal: ctl.signal,
@@ -35,7 +35,7 @@ module.exports = ({ log }) => {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 1.0, maxOutputTokens: 1024, responseMimeType: 'application/json',
+          generationConfig: { temperature: 1.0, maxOutputTokens: 400, responseMimeType: 'application/json', ...(gNoThink ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
             responseSchema: { type: 'OBJECT', properties: { say: { type: 'STRING' }, mood: { type: 'STRING', enum: MOODS },
               reply_to: { type: 'STRING' },
               remember: { type: 'ARRAY', items: { type: 'OBJECT', properties: { name: { type: 'STRING' }, fact: { type: 'STRING' } }, required: ['name', 'fact'] } } },
@@ -47,6 +47,7 @@ module.exports = ({ log }) => {
         const named = r.status === 404 ? [...String(j.error?.message || '').matchAll(/models\/([\w.-]+[\w])/g)].map(m => m[1]) : [];
         const next = named[named.length - 1];
         if (next && next !== gModel && !retried) { log(`llm: model ${gModel} retired, switching to ${next}`); gModel = next; return gemini(system, prompt, true); }
+        if (r.status === 400 && gNoThink && /think/i.test(JSON.stringify(j.error || ''))) { gNoThink = false; log('llm: this model wants its thinking on, keeping it'); return gemini(system, prompt, retried, useModel); }
         if (r.status === 503 || r.status === 500) {
           if (!useModel && !retried) { await sleep(800); return gemini(system, prompt, 'busy'); }
           if (retried === 'busy' && gBackup !== gModel) { log(`llm: ${gModel} busy, trying ${gBackup}`); return gemini(system, prompt, 'backup', gBackup); }
@@ -72,13 +73,13 @@ module.exports = ({ log }) => {
 
   async function openrouter(system, prompt) {
     if (!oKey || Date.now() < oPauseUntil) return null;
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 7000);
     try {
       const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST', signal: ctl.signal,
         headers: { 'content-type': 'application/json', authorization: `Bearer ${oKey}`, 'x-title': 'Hubie live 24/7' },
         body: JSON.stringify({
-          model: oModel, temperature: 1.0, max_tokens: 400, response_format: { type: 'json_object' },
+          model: oModel, temperature: 1.0, max_tokens: 300, response_format: { type: 'json_object' },
           messages: [{ role: 'system', content: system }, { role: 'user', content: prompt + '\n\nReply with only the JSON object.' }],
         }),
       });
