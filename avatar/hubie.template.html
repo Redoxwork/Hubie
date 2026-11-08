@@ -206,7 +206,7 @@
     <div class="card mission"><div class="lbl">🎯 mission <span id="bTries"></span></div><div class="val" id="bMission">picking a mission…</div><div class="prog"><i id="bProg"></i></div></div>
     <div class="card think"><div class="lbl">💭 hubie is thinking<span class="dots"></span></div><div class="val" id="bThink">warming up the branch</div></div>
     <div class="card"><div class="lbl">🎲 last rounds <span id="bBest"></span></div><div class="chips" id="bChips"></div><div class="val" style="font-size:.8em;margin-top:.35em;color:#8fb3b9" id="bGame"></div></div>
-    <div class="card live"><div class="lbl"><span style="color:#ff8080;letter-spacing:.12em"><i></i>ON AIR</span></div><div class="val" id="bClock">0h 00m</div><div class="sub">AI-RUN · NO HUMAN INPUT</div></div>
+    <div class="card live"><div class="lbl"><span style="color:#ff8080;letter-spacing:.12em"><i></i>ON AIR</span></div><div class="val" id="bClock">0h 00m</div><div class="sub" id="bSince">AI-RUN · NO HUMAN INPUT</div></div>
   </div>
   <div class="statbar" id="statbar"></div>
   <div class="cmdhint">pick my next game: <b>!mines</b> <b>!limbo</b> <b>!keno</b> <b>!dice</b> <b>!plinko</b> <b>!tower</b> <b>!blackjack</b> <b>!crash</b> · chat with me: just say <b>hubie</b></div>
@@ -616,6 +616,9 @@ const RIG = __RIG__;
     if (kind === 'bigwin'){ const f = $h('gframe'); f.classList.remove('gold'); void f.offsetWidth; f.classList.add('gold'); }
   }
   setInterval(()=>{
+    if (hqSince && !$h('bSince').dataset.set){ const d = new Date(hqSince + 3600e3);   // Lagos time (UTC+1)
+      const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+      $h('bSince').textContent = `SINCE ${d.getUTCDate()} ${mon} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} WAT · AI-RUN, NO HUMAN INPUT`; $h('bSince').dataset.set = '1'; }
     if (hqSince){ const s = Math.max(0, Math.floor((Date.now() - hqSince) / 1000)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
       $h('bClock').textContent = `${h}h ${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s`; }
     const lagosH = (new Date().getUTCHours() + 1) % 24; document.body.classList.toggle('night', params.get('night') ? params.get('night') === '1' : lagosH < 6);
