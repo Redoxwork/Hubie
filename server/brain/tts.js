@@ -11,7 +11,7 @@ module.exports = ({ H, DATA, log }) => {
   const waiting = new Map();
 
   function start() {
-    proc = spawn(py, [path.join(__dirname, 'tts_worker.py'), dir, out], { stdio: ['pipe', 'pipe', 'inherit'],
+    proc = spawn('nice', ['-n', '10', py, path.join(__dirname, 'tts_worker.py'), dir, out], { stdio: ['pipe', 'pipe', 'inherit'],   // low priority: the stream video always comes first
       env: { ...process.env, OMP_NUM_THREADS: process.env.TTS_THREADS || '3', TTS_THREADS: process.env.TTS_THREADS || '3' } });
     proc.stdout.on('data', d => {
       buf += d; let i;

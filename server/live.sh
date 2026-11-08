@@ -90,7 +90,7 @@ FONT=/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf
 LABEL=",drawtext=fontfile=$FONT:textfile=$RUN/uptime.txt:reload=1:x=w-tw-14:y=h-th-40:fontsize=15:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=6"
 [ "${SHOW_UPTIME:-1}" = 0 ] && LABEL=""
 # encoder speed: small servers (<8 cores) use a lighter preset so video keeps up with the sound
-XPRESET=${X264_PRESET:-$( [ "$(nproc)" -lt 8 ] && echo superfast || echo veryfast )}
+XPRESET=${X264_PRESET:-$( [ "$(nproc)" -le 8 ] && echo superfast || echo veryfast )}
 # streamer layout: the game a bit smaller on the left, a column on the right for Hubie's cam + chat (LAYOUT=full: game full screen)
 if [ "${LAYOUT:-col}" = col ]; then BASE="[0:v]scale=1024:576:flags=bilinear[gs];color=c=0x0a1216:s=1280x720:r=30[bg];[bg][gs]overlay=0:0:shortest=1[g];"; AVCOL="&col=1"
 else BASE="[0:v]null[g];"; AVCOL=""; fi
