@@ -8,6 +8,7 @@ const BASE = process.env.HUBIE_GAMES_BASE || 'https://www.housebets.com';
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}] player:`, ...a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const rand = (a, b) => a + Math.random() * (b - a);
+const randInt = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const NEVER = /deposit|withdraw|cashier|wallet|buy|purchase|real money|autobet|auto bet|start auto/i;
 
@@ -31,7 +32,7 @@ const GAMES = {
               steps: { step: /^\s*(go|step|next|cross|jump|move)\s*$/i, min: 3, max: 7, cap: 14, cash: /^cash ?out/i } },
   tower:    { name: 'Dragon Tower', slugs: ['dragon-tower', 'dragontower', 'tower'], button: /^(bet|play)$/i, weight: 2, risk: ['easy', 'medium', 'hard'],
               steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 2, max: 5, cap: 9, cash: /^cash ?out/i } },
-  mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, pick([3, 4, 4, 5, 5, 6, 7, 8])), button: /^(bet|play)$/i, weight: 5, mines: [2, 3, 4, 5, 5, 8, 10, 12],
+  mines:    { name: 'Mines',    slugs: ['mines'], auto: true, autoPrep: page => pickTiles(page, randInt(...minesTiles())), button: /^(bet|play)$/i, weight: 5, mines: [3, 5, 5, 8, 8, 10, 12, 15, 20],
               steps: { step: /^\s*(random( ?(pick|tile|egg|card|spot))?|pick random( tile)?|auto ?pick)\s*$/i, min: 3, max: 6, cap: 14, cash: /^cash ?out/i, board: true } },
   hilo:     { name: 'Hilo',     slugs: ['hilo', 'hi-lo'], button: /^(bet|play)$/i, weight: 2,
               steps: { step: 'safer', min: 1, max: 3, cap: 6, cash: /^cash ?out/i } },
@@ -46,6 +47,8 @@ const GAMES = {
                 if (Math.random() < 0.3) await clickAny(page, new RegExp('^\\s*' + (1 + Math.floor(Math.random() * 36)) + '\\s*$'));   // a straight-up number now and then
               } },
 };
+let minesNow = 5;
+const minesTiles = (m = minesNow) => m >= 20 ? [1, 2] : m >= 15 ? [2, 3] : m >= 12 ? [2, 4] : m >= 10 ? [3, 5] : m >= 8 ? [3, 6] : m >= 5 ? [3, 7] : [4, 8];
 const ALIASES = { coin: 'coinflip', 'coin flip': 'coinflip', 'max win': 'maxwin', max: 'maxwin', plink: 'plinko', 'hubies road': 'road', 'hubie road': 'road', hubiesroad: 'road',
   'dragon tower': 'tower', dragontower: 'tower', dragon: 'tower', mine: 'mines', 'hi lo': 'hilo', 'black jack': 'blackjack', bj: 'blackjack' };
 function resolve(n) {
@@ -595,8 +598,9 @@ module.exports = function startPlayer(page, shared) {
       riskNow = r; tell('setting', { game: g.name, risk: r, by: pref.by || '' });
     }
     if (g.mines) {
-      const n = pref.risk === 'high' ? 5 : pref.risk === 'low' ? 1 : pick(g.mines);
+      const n = chalNow().game === 'mines' ? pick([3, 5, 5, 8]) : pref.risk === 'high' ? pick([12, 15]) : pref.risk === 'low' ? 3 : pick(g.mines);   // a Mines mission needs tiles that can be reached
       const got = await setByLabel(ui, /mines/i, n);
+      if (got !== null && Number(got) > 0) minesNow = Number(got);
       if (got !== null) tell('setting', { game: g.name, risk: `${n} mines`, by: pref.by || '' });
     }
   }
@@ -871,7 +875,8 @@ module.exports = function startPlayer(page, shared) {
         if (g.steps) {                                                  // steps go up after a win, down after a bust
           const st = g.steps; level[current] = level[current] || Math.round((st.min + st.max) / 2);
           const cap = st.cap || st.max, spread = pick([-2, -1, -1, 0, 0, 0, 1, 1, 2, 3]);
-          const goal = chal.game === current && chal.kind === 'steps' ? Number(chal.target) : Math.max(st.min, Math.min(cap, level[current] + spread));
+          let goal = chal.game === current && chal.kind === 'steps' ? Number(chal.target) : Math.max(st.min, Math.min(cap, level[current] + spread));
+          if (current === 'mines') goal = Math.min(goal, randInt(...minesTiles()) + (chal.game === 'mines' ? 2 : 0));   // no impossible picks with lots of mines
           const r = await runSteps(ui, st, goal);
           stepInfo = { steps: r.done, survived: r.survived ? 1 : 0 };
           if (r.survived === true) level[current] = Math.min(st.cap || st.max, level[current] + 1);
