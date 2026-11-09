@@ -10,7 +10,7 @@ const REACT = { happy: 'win', laugh: 'win', excited: 'bigwin', sad: 'loss', shoc
 // ---- filters -------------------------------------------------------------
 const BAD_WORDS = /\b(n+i+g+(a|er)?s?|f+a+g+(ot)?s?|retard(ed)?|c+u+n+t+s?|k+y+s|rap(e|ist)|nazi|hitler|porn|onlyfans|whore|slut|pussy|dick|cock|fuck\w*|shit\w*|bitch\w*)\b/i;
 const URL_RE = /\b((https?:\/\/|www\.)\S+|\S+\.(com|net|org|gg|io|ly|xyz|ru|me|tv|co)(\/\S*)?)\b/gi;
-const SPAM_RE = /(!noads|ai service|cheap (viewers|followers)|(viewers|followers|views) (for|at) |promo(tion)?\b|discount|telegram|whatsapp|dm me|crypto signal|boost your (stream|channel)|best viewers)/gi;
+const SPAM_RE = /(!noads|ai service|cheap (viewers|followers)|(viewers|followers|views) (for|at) |promo(tion)?\b|discount|telegram|whatsapp|dm me|crypto signal|boost your (stream|channel)|best viewers|\bsmm\b|\w+smm\b|make your stream|grow your (stream|channel)|\b[a-z0-9-]{3,}\s+(com|net|xyz|shop|io|pro)\b)/gi;
 const TROLL_RE = /(ur|you'?re|ya|u r|you are) (dull|boring|trash|mid|a bot|slow|dumb)|stream is (broken|dead|trash)|deez nuts|override (ur|your)|you'?re (a )?bot|\bnpc\b|\bboring\b|\bdull\b|\bmid\b/i;
 const BEG_RE = /(dash me|do me something|send me (money|something|sol|btc|crypto)|can i (get|have) (a )?(tip|money|something)|give me (money|tip|something)|tip me|abeg (dash|help|send)|gimme (money|something))/i;
 const SUPPORT_RE = /(can'?t stop (gambling|betting)|addict|lost (everything|all my|my rent|my savings)|in debt|chasing (my )?loss|borrow(ed)? money to|need (to win|money) (back|bad)|kill myself|want to die|suicid)/i;

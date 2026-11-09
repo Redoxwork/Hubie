@@ -15,7 +15,7 @@ const UP_HOST = up.hostname, UP_PORT = Number(up.port || 80);
 const log = (...a) => console.log('[proxy]', ...a);
 // Only these sites go through the paid proxy; everything else (slot CDNs, images
 // from game providers) goes straight out from the server to save proxy data.
-const ONLY = (process.env.HUBIE_PROXY_ONLY || 'housebets.com').split(',').map(s => s.trim()).filter(Boolean);
+const ONLY = (process.env.HUBIE_PROXY_ONLY || 'all') === 'all' ? [] : process.env.HUBIE_PROXY_ONLY.split(',').map(s => s.trim()).filter(Boolean);   // default: everything through the proxy
 const viaProxy = host => !ONLY.length || ONLY.some(d => host === d || host.endsWith('.' + d));
 let usedUp = 0, usedDirect = 0;
 const count = (sock, viaUp) => sock.on('data', d => { if (viaUp) usedUp += d.length; else usedDirect += d.length; });

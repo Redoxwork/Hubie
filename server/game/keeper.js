@@ -125,6 +125,16 @@ async function tick(page) {
     return null;
   }, { safe: SAFE.source, never: NEVER.source }).catch(() => null);
   if (hit) log('closed popup:', JSON.stringify(hit));
+  const region = await page.evaluate(() => {
+    const t = [...document.querySelectorAll('h1,h2,h3,h4,p,div,span')].find(e => e.children.length <= 2 && /unavailable in your region/i.test(e.textContent || '') && e.getClientRects().length);
+    if (!t) return null;
+    let box = t; for (let i = 0; i < 6 && box.parentElement && !box.querySelector('button'); i++) box = box.parentElement;
+    const btns = [...box.querySelectorAll('button,[role=button]')].filter(b => b.getClientRects().length);
+    const x = btns.find(b => /close|dismiss|×|✕/i.test((b.getAttribute('aria-label') || '') + (b.title || '') + (b.innerText || ''))) || btns.find(b => !(b.innerText || '').trim());
+    if (x) { x.click(); return 'closed'; }
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return 'escape';
+  }).catch(() => null);
+  if (region) { shared.regionNotice = (shared.regionNotice || 0) + 1; if (shared.regionNotice % 20 === 1) log('region notice showing: ' + region + ' (check: hubie proxy test)'); }
   await calm(page);
   shared.blocked = !shared.loggingIn && await isBlocked(page);
   if (shared.blocked) {                                            // never click it; reload, then the lounge
