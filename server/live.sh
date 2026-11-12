@@ -27,7 +27,7 @@ fi
 [ -s "$H/data/live-since" ] || date +%s > "$H/data/live-since"
 
 # ---------- parts ----------
-start_xvfb(){ Xvfb ":$1" -screen 0 1280x720x24 -nolisten tcp >/dev/null 2>&1 & echo $!; }
+start_xvfb(){ Xvfb ":$1" -screen 0 ${2:-1280x720}x24 -nolisten tcp >/dev/null 2>&1 & echo $!; }
 
 AUDIO_IN=(-f lavfi -i anullsrc=r=44100:cl=stereo)
 if command -v pulseaudio >/dev/null && pulseaudio --daemonize=yes --exit-idle-time=-1 >/dev/null 2>&1; then
@@ -54,11 +54,11 @@ start_game(){
   # the profile is kept between restarts so the Housebets login + cookies survive
   # zoomed out so tall games (Plinko) fit; the window is made bigger by the same factor so it still fills the 1280x720 screen
   local SC="${GAME_SCALE:-0.75}" WW WH
-  WW=$(python3 -c "print(round(1280/$SC))"); WH=$(python3 -c "print(round(720/$SC))")
+  SC=$(python3 -c "print(round($SC*0.75,4))"); WW=$(python3 -c "print(round(960/$SC))"); WH=$(python3 -c "print(round(540/$SC))")
   local CHG=("${CH[@]/--force-device-scale-factor=1/--force-device-scale-factor=$SC}")
   CHG=("${CHG[@]/--window-size=1280,720/--window-size=$WW,$WH}")
   # software WebGL so 3D games (Max Win reels) draw without a graphics card
-  DISPLAY=:99 nice -n 5 "${CHG[@]}" "${GPROXY[@]}" --ignore-gpu-blocklist --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --enable-webgl --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
+  DISPLAY=:99 nice -n 5 "${CHG[@]}" "${GPROXY[@]}" --ignore-gpu-blocklist --disable-gpu-compositing --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --enable-webgl --user-data-dir="$H/data/chrome-live-game" --remote-debugging-port=9222 "$GAME_URL" >/dev/null 2>&1 & echo $!
 }
 brain_up(){ curl -fs --max-time 3 http://127.0.0.1:8090/health >/dev/null; }
 start_avatar(){
@@ -93,15 +93,15 @@ LABEL=",drawtext=fontfile=$FONT:textfile=$RUN/uptime.txt:reload=1:x=w-tw-14:y=h-
 XPRESET=${X264_PRESET:-$( [ "$(nproc)" -le 8 ] && echo superfast || echo veryfast )}
 # streamer layout: the game a bit smaller on the left, a column on the right for Hubie's cam + chat (LAYOUT=full: game full screen)
 if [ "${LAYOUT:-col}" = col ]; then BASE="[0:v]scale=1024:576:flags=bilinear[gs];color=c=0x0a1216:s=1280x720:r=30[bg];[bg][gs]overlay=0:0:shortest=1[g];"; AVCOL="&col=1"
-else BASE="[0:v]null[g];"; AVCOL=""; fi
+else BASE="[0:v]scale=1280:720[g];"; AVCOL=""; fi
 renderer(){
   while :; do
     ffmpeg -hide_banner -loglevel error -nostdin \
-      -thread_queue_size 1024 -f x11grab -framerate 30 -video_size 1280x720 -draw_mouse 0 -i :99 \
+      -thread_queue_size 1024 -f x11grab -framerate 30 -video_size 960x540 -draw_mouse 0 -i :99 \
       -thread_queue_size 1024 -f x11grab -framerate 30 -video_size 1280x720 -draw_mouse 0 -i :98 \
       -thread_queue_size 1024 "${AUDIO_IN[@]}" \
       -filter_complex "$BASE[1:v]colorkey=0x00FF00:0.30:0.08[av];[g][av]overlay=format=auto${LABEL},format=yuv420p[v]" \
-      -map "[v]" -map 2:a -af aresample=async=1000 -fps_mode cfr -r 30 \
+      -map "[v]" -map 2:a -af adelay=delays=${AUDIO_DELAY:-400}:all=1,aresample=async=1000 -fps_mode cfr -r 30 \
       -c:v libx264 -preset $XPRESET -tune zerolatency -bf 0 -b:v ${VBITRATE:-4500}k -maxrate ${VBITRATE:-4500}k -bufsize $(( ${VBITRATE:-4500} * 2 ))k \
       -g 60 -keyint_min 60 -sc_threshold 0 -c:a aac -b:a 128k -ar 44100 -f flv "$RELAY"
     log "renderer stopped (code $?), restarting"; sleep 2
@@ -127,7 +127,7 @@ keeper(){
 
 # ---------- start ----------
 log "starting Hubie LIVE"
-X99=$(start_xvfb 99); X98=$(start_xvfb 98); sleep 2
+X99=$(start_xvfb 99 960x540); X98=$(start_xvfb 98); sleep 2
 if [ -n "${HUBIE_PROXY:-}" ]; then relay_proxy & sleep 2; log "game window goes through the residential proxy"; fi
 GAME=$(start_game); AVATAR=$(start_avatar); sleep 8
 RELAYP=$(start_relay)
@@ -152,7 +152,7 @@ n=0
 while :; do
   sleep 15; n=$((n + 1))
   uptime_text
-  if ! alive "$X99"; then log "watchdog: game screen died, restarting"; X99=$(start_xvfb 99); sleep 2; fi
+  if ! alive "$X99"; then log "watchdog: game screen died, restarting"; X99=$(start_xvfb 99 960x540); sleep 2; fi
   if ! alive "$X98"; then log "watchdog: avatar screen died, restarting"; X98=$(start_xvfb 98); sleep 2; fi
   if ! alive "$GAME"; then log "watchdog: game window died, restarting"; GAME=$(start_game); GAME_STARTED=$(date +%s); fi
   if ! alive "$AVATAR"; then log "watchdog: avatar window died, restarting"; AVATAR=$(start_avatar); fi
