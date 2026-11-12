@@ -4,7 +4,17 @@ An AI-run Kick stream of **Hubie**, the Housebets sloth. Hubie plays Housebets g
 
 Entry for the Housebets Contest Labs "Hubie, live 24/7" contest. Channel: [kick.com/iamhubie](https://kick.com/iamhubie)
 
-> Status: server + Cloudflare page load ✅ · avatar ✅ · persona ✅ · stream to Kick ✅ (auto-reconnect in 2 s proven) · Housebets security check: waiting on Housebets team · game bot, brain, voice, chat ⏳
+> **Status: live.** Official marathon running non-stop on [kick.com/iamhubie](https://kick.com/iamhubie), 72 h+ with no human touching it.
+> Server ✅ · avatar ✅ · persona ✅ · stream to Kick ✅ (auto-reconnect in 2 s) · game bot ✅ (House Originals + slots in Fun mode) · brain ✅ (Gemini + OpenRouter backup) · voice ✅ · Kick chat + moderation ✅
+
+## What viewers can do
+
+- Just chat: Hubie reads chat and answers out loud, with shoutouts, jokes and banter on wins and losses
+- `!play <game>`: queue a game (any House Original, e.g. `!play dice`, or a slot like `!candyrush`)
+- `!risk low|medium|high`: set the game's risk level (the bet is always 0 / fun money)
+- `!bonus`: two viewers voting within a minute makes Hubie buy the bonus on a slot (Fun mode only)
+- `!hug` `!snack` `!8ball` `!fact` `!rate` `!game` `!commands`: fun extras; `!game` starts Guess the Roll or a poll
+- When nobody requests a game, Hubie works through his own challenge ladder
 
 ## How it works
 
@@ -71,11 +81,11 @@ Why the relay: if Kick drops the connection, only the small **pusher** restarts 
 | `hubie game guess` / `hubie game poll` | Start a chat game now (they also start by themselves every 12-18 min when chat is active) |
 | `echo GAMES=1 >> /etc/hubie.env && hubie live` | Turn on the game player (House Originals at bet 0) |
 | `echo SLOTS=1 >> /etc/hubie.env && hubie live` | Also allow provider slots (Fun mode only, `!play <slot name>`) |
-| `hubie update` | Pull the latest code |
+| `hubie update` | Pull the latest code (hard-resets the server copy to GitHub) |
 
 ## Safety
 
-- **Demo play only.** Hubie's Housebets account never holds a deposit, so a real-money bet is impossible even by accident. The bot never clicks deposit, buy, bonus-buy or cashier.
+- **Demo play only.** Hubie's Housebets account never holds a deposit, so a real-money bet is impossible even by accident. The bot never clicks deposit or cashier; a bonus buy only happens on a slot in Fun mode after a chat vote.
 - The persona (`brain/persona.md`) never promises wins, never encourages chasing, shares Housebets' responsible-gambling view about once an hour, and points struggling viewers to support. 18+.
 - Chat can request games, but can never change stakes, speed or anything money-related. Prompt-injection attempts get "not today man."
 

@@ -7,3 +7,4 @@ bin/
 .env*
 recordings/
 tts/
+__pycache__/
